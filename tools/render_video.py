@@ -55,7 +55,7 @@ async def main(a):
                 print(f'  frame {i}/{frames}', file=sys.stderr)
         await b.close()
     subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-framerate', str(a.fps), '-i', str(tmp / 'f%05d.png'),
-                    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', str(a.crf), '-pix_fmt', 'yuv420p',
+                    '-c:v', 'libx264', '-preset', a.preset, '-crf', str(a.crf), '-pix_fmt', 'yuv420p',
                     '-movflags', '+faststart', a.out], check=True)
     if a.keep_frames:
         print(f'frames kept in {tmp}', file=sys.stderr)
@@ -75,5 +75,6 @@ if __name__ == '__main__':
     ap.add_argument('--size', default='1280x720')
     ap.add_argument('--pad', type=float, default=35, help='minutes before sunrise / after sunset')
     ap.add_argument('--crf', type=int, default=20)
+    ap.add_argument('--preset', default='slow', help='x264 preset (slower = better quality per byte)')
     ap.add_argument('--keep-frames', action='store_true')
     asyncio.run(main(ap.parse_args()))
