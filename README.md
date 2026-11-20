@@ -139,3 +139,7 @@ web/index.html      built, self-contained scene (what the app loads)
 tools/              screenshot and benchmark scripts
 CONTRACT.md         JS API between the app and the scene
 ```
+
+## License
+
+[MIT](LICENSE) © 2026 Stephen Pontes. Use it, fork it, change it; just keep the copyright notice.
