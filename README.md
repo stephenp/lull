@@ -4,150 +4,54 @@
 
 <p align="center">A live Mac wallpaper of sunlight falling across a wall.<br>The light follows the real sun where you are, from first light to moonlight.</p>
 
+<p align="center"><a href="https://github.com/stephenp/lull/releases/latest"><b>Download for Mac</b></a> · macOS 13 or later · Apple Silicon and Intel</p>
+
 ![Golden-hour light through a window frame and tree leaves on a knockdown wall, with the time display](docs/screenshots/hero.jpg)
 
 ### Sunrise to sunset
 
 [![A day of light in 20 seconds: knockdown wall, window frame, foliage, with the breeze on](docs/preview.gif)](docs/preview.mp4)
 
-A whole June day in Sacramento in 20 seconds, with Dynamic Environment on. The GIF is a smaller preview; click it for the full-quality video.
+A whole June day in 20 seconds. Click the preview for the full-quality video.
 
 | | |
 |---|---|
 | ![Late-afternoon light through an arched window and a tree on oak panels](docs/screenshots/oak-arch.jpg) | ![Evening light through blinds and leaves on a knockdown wall](docs/screenshots/blinds.jpg) |
 | ![Golden hour through a sheer curtain on limewash](docs/screenshots/curtain.jpg) | ![Moonlight through blinds at night, with the time display](docs/screenshots/night.jpg) |
 
-Lull is a small, native menu bar app. It works out the sun's position for your location (the NOAA solar algorithm) and renders the light coming through a window onto your wall in real time:
+## Options
 
-- **Light that moves with the day:** the light's height, color and timing follow the real sun. Cool skylight fills the shade, golden hour turns amber, and after dusk a cool moonlight takes over.
-- **Windows:** blinds, a window frame, or a tall arched window.
-- **Decorations:** a tree outside with dappled, layered foliage, or a sheer curtain.
-- **Walls:** knockdown, limewash, or honey-oak panels.
-- **Dynamic Environment:** a gentle breeze through the leaves, curtain and blinds.
-- **Show Time:** the time, the date, time until sunset/sunrise and today's sun curve, drifting slowly to avoid burn-in.
-- **Preview Day:** scrub through a whole day of light.
-- **Light on resources:** it pauses completely while your desktop is covered or the displays sleep.
+Everything lives in a small menu bar icon:
 
-It started as a personal recreation of [sunstill.app](https://sunstill.app/).
+- **Window:** blinds, a window frame, or a tall arched window
+- **Decoration:** none, a tree outside, or a sheer curtain
+- **Wall:** knockdown, limewash, or oak panels
+- **Dynamic Environment:** a gentle breeze through the leaves, curtain and blinds
+- **Show Time:** the time, the date, time until sunset or sunrise, and today's sun curve
+- **Preview Day:** scrub through a whole day of light
+- **Launch at Login** and **Low Power Mode**
 
-> **Fully vibe-coded with Claude.** Lull was built entirely in conversation with Claude (Anthropic). I described what I wanted, reacted to screenshots and builds, and tested it on my Mac. Claude wrote all of the code: the Swift app, the WebGL shaders and JavaScript, the build script, the dev tools and this README. Claude wrote the Swift without a Swift compiler of its own, so a build can occasionally need a small fix, and the error from `./build.sh` should point straight at it. Treat it like any vibe-coded project: it works on my machine, but it hasn't had a careful line-by-line human review.
+The light's angle, color and warmth follow the real sun at your location, through golden hour into a cool moonlit night. Lull pauses itself while your desktop is covered, so it stays light on your Mac.
 
-## Requirements
+## Install
 
-- macOS 13 Ventura or later, on Apple Silicon or Intel
-- To build: the Xcode Command Line Tools (`xcode-select --install`). Full Xcode works too but isn't needed, and there's no Xcode project.
+1. Download `Lull-1.0.dmg` from the [latest release](https://github.com/stephenp/lull/releases/latest) and drag Lull into Applications.
+2. Open it. Since Lull isn't from the App Store, macOS blocks it the first time. Go to **System Settings → Privacy & Security** and click **Open Anyway**. On macOS 13–14 you can right-click the app and choose **Open** instead. You only need to do this once.
+3. Allow location access, so the light matches the sun where you are.
 
-## Build and run
+## Build it yourself
+
+With the Xcode Command Line Tools (`xcode-select --install`):
 
 ```sh
 git clone https://github.com/stephenp/lull.git
-cd lull/mac
-./build.sh            # builds mac/build/Lull.app (universal arm64 + x86_64 when possible)
-./build.sh run        # build, then launch
-./build.sh install    # build, copy to /Applications, launch
+cd lull/mac && ./build.sh install
 ```
 
-`build.sh` compiles the Swift sources with `swiftc`, assembles `Lull.app` with the scene and icon inside, and signs it ad-hoc. If one architecture fails to compile it carries on with the other, and only stops if neither builds.
+## About
 
-Once Lull is running, its icon (two slanted bars of light) appears in the menu bar. There's no Dock icon. The wallpaper sits above your desktop picture and below your desktop icons. Allow location access when asked, so the light matches the sun where you are; otherwise Lull estimates your location from your time zone.
+Lull started as a personal recreation of [sunstill.app](https://sunstill.app/).
 
-For Launch at Login to work, install the app into `/Applications` (`./build.sh install`).
+> **Fully vibe-coded with Claude.** Lull was built entirely in conversation with Claude (Anthropic). I described what I wanted, reacted to screenshots and builds, and tested it on my Mac. Claude wrote all of the code. It works on my machine, but it hasn't had a careful line-by-line human review.
 
-## Sharing with friends
-
-```sh
-cd mac
-./build.sh dist       # builds mac/build/Lull-1.0.dmg and reveals it in Finder
-```
-
-The disk image holds `Lull.app`, an Applications shortcut to drag it onto, and `How to open Lull.txt`. Send the `.dmg` by AirDrop, Messages or a shared folder.
-
-Lull isn't signed by a registered Apple developer, so macOS blocks it the first time someone else opens it:
-
-- **macOS 15 Sequoia and newer:** System Settings → Privacy & Security → **Open Anyway**, once.
-- **macOS 13–14:** right-click the app → Open.
-- **Terminal alternative:** `xattr -dr com.apple.quarantine /Applications/Lull.app`
-
-The note inside the disk image walks through it.
-
-**Optional: a self-signed certificate.** The default ad-hoc signature works, but every rebuild looks like a new app to macOS, so location access and Launch at Login can reset after an update. To keep them, create a certificate once in Keychain Access → Certificate Assistant → Create a Certificate (Certificate Type: *Code Signing*), then build with it:
-
-```sh
-LULL_SIGN_IDENTITY="Lull Self-Signed" ./build.sh dist
-```
-
-Only an Apple Developer ID with notarization removes the one-time Open Anyway step.
-
-## Menu bar options
-
-| Item | What it does |
-|---|---|
-| (header) | The location the sun is computed for. Location is automatic (CoreLocation, refreshed every 3 hours and on wake). If access is denied, Lull estimates from your time zone and shows **Allow Location Access…** |
-| Window | Blinds / Window Frame / Arched Window |
-| Window Decoration | None / Foliage (Tree Outside) / Sheer Curtain |
-| Wall | Knockdown / Limewash / Oak Panels. The wall is seen from across the room, so texture is subtle and shows most in low morning and evening light |
-| Dynamic Environment | A gentle breeze through the leaves, curtain and blinds. Off means a still scene that redraws every 5 s, the lightest option on battery |
-| Preview Day | Plays the day fast (24 h in about a minute) and opens a floating bar above the Dock with a scrubber, play/pause, and **Done** to return to live time |
-| Show Time | Bottom-left: the time in your Mac's 12/24-hour format, the date, time until sunset/sunrise, and today's sun curve. The text turns dark over bright light, and the block drifts slowly to prevent burn-in |
-| Low Power Mode | Redraws rarely, at lower resolution |
-| Launch at Login | Registers with `SMAppService` (install to /Applications first) |
-| Reload Wallpaper | Recreates the wallpaper windows if something looks stuck |
-
-Settings live in `UserDefaults` under `com.stephenp.lull`.
-
-## Working on the scene
-
-The scene is a self-contained WebGL page, so you can work on it in a browser without the Mac app:
-
-```sh
-open web/index.html
-open "web/index.html?lat=38.58&lon=-121.49&scene=arch&deco=foliage&wall=wood&hud=1&speed=600"
-```
-
-- **Parameters:** `lat`, `lon`, `t` (fixed local time, e.g. `2026-06-21T19:30:00`), `scene` (`blinds|window|arch`), `deco` (`none|foliage|curtain`), `wall` (`knockdown|limewash|wood`), `dyn=0` (still scene), `hud=1` (show time), `speed` (time multiplier).
-- **Keys:** ←/→ scrub 15 minutes, `1`/`2`/`3` window, `d` decoration, `w` wall, `e` breeze, `h` time display, `n` back to live time. With the time display showing during a preview, you can drag across the sun curve.
-- **Edit `web/src.html`, then run `python3 web/build.py`.** That inlines the sun math (`web/solar.js`) into the self-contained `web/index.html` that the app loads.
-- **JS API:** the app talks to the page through `window.lull.setConfig({...})` and `window.lull.getState()`, described in [`CONTRACT.md`](CONTRACT.md).
-- **Dev tools** (Python + Playwright; set `CHROME=/path/to/chrome` to use a specific browser):
-  - `tools/shoot.py out/ name='t=…&scene=…'` renders screenshots.
-  - `tools/bench.py` prints the relative GPU cost per redraw. It uses a software renderer, so only ratios between scenes are meaningful.
-  - `tools/render_video.py out.mp4` renders a sunrise-to-sunset time-lapse like the one above (needs ffmpeg). The sun's clock is time-lapsed while the breeze runs in real time.
-
-## How it works
-
-- **Mac app** (`mac/Sources`, AppKit): one borderless, click-through window per display at desktop level on every Space, each hosting the scene in a `WKWebView`. It also handles the menu bar item, the Preview Day bar, location, and pausing when a display is covered or asleep.
-- **Rendering**, in three GPU passes:
-  1. The wall's color and surface relief, drawn once.
-  2. The light through the window and decoration, at half resolution and only where light can land.
-  3. A cheap full-resolution pass that combines them with sun color, skylight, room bounce, night grading and tone mapping.
-- **Frame rate:** follows how much is moving, from 20 fps for fluttering leaves to one redraw every 5 s for a still scene.
-- **Sun:** NOAA solar position sets the light's height, color and timing. The patch's left–right travel follows the day's progress so it stays on screen.
-- **Night:** a fixed cool moonlight with a slight blue shift, the way eyes and film see low light.
-
-## Troubleshooting
-
-- **Nothing shows on the desktop:** quit other wallpaper apps, try Reload Wallpaper, and check the logs: `log stream --predicate 'process == "Lull"'`.
-- **The wallpaper looks frozen when it shouldn't:** Lull pauses while a display's desktop is fully covered. If macOS ever misreports that, turn it off with `defaults write com.stephenp.lull pauseWhenCovered -bool false`.
-- **Only one display gets the wallpaper:** try Reload Wallpaper after connecting a display, and check System Settings → Desktop & Dock → "Displays have separate Spaces".
-- **Location doesn't work:** allow Lull in System Settings → Privacy & Security → Location Services (the menu has a shortcut).
-- **Launch at Login fails:** run `./build.sh install` so the app lives in `/Applications`, or add it manually under System Settings → General → Login Items.
-
-## Layout
-
-```
-mac/Sources/        Swift: AppDelegate, WallpaperWindow, PreviewPanel, MenuBarIcon, Settings, LocationProvider, main
-mac/build.sh        build / run / install / dist
-mac/Info.plist      bundle info (version, location usage text)
-mac/icon.png        1024 px app icon, turned into AppIcon.icns at build time
-mac/dist/           the note that ships inside the DMG
-web/src.html        the scene source
-web/solar.js        NOAA sun position and sunrise/sunset
-web/index.html      built, self-contained scene (what the app loads)
-tools/              screenshot, benchmark and video scripts
-docs/               README images and the preview video
-CONTRACT.md         JS API between the app and the scene
-```
-
-## License
-
-[MIT](LICENSE) © 2026 Stephen Pontes. Use it, fork it, change it; just keep the copyright notice.
+[MIT](LICENSE) © 2026 Stephen Pontes
