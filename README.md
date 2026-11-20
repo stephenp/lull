@@ -6,18 +6,25 @@
 
 <p align="center"><a href="https://github.com/stephenp/lull/releases/latest"><b>Download for Mac</b></a> · macOS 13 or later · Apple Silicon and Intel</p>
 
-![Golden-hour light through a window frame and tree leaves on a knockdown wall, with the time display](docs/screenshots/hero.jpg)
+[![A whole day of light in 20 seconds: knockdown wall, window frame and tree leaves, with the breeze on](docs/preview.webp)](docs/preview.mp4)
 
-### Sunrise to sunset
+<p align="center"><sub>A June day, sunrise to sunset, in 20 seconds. Click for the full-quality video.</sub></p>
 
-[![A day of light in 20 seconds: knockdown wall, window frame, foliage, with the breeze on](docs/preview.gif)](docs/preview.mp4)
+## Screenshots
 
-A whole June day in 20 seconds. Click the preview for the full-quality video.
-
-| | |
-|---|---|
-| ![Late-afternoon light through an arched window and a tree on oak panels](docs/screenshots/oak-arch.jpg) | ![Evening light through blinds and leaves on a knockdown wall](docs/screenshots/blinds.jpg) |
-| ![Golden hour through a sheer curtain on limewash](docs/screenshots/curtain.jpg) | ![Moonlight through blinds at night, with the time display](docs/screenshots/night.jpg) |
+<table>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/hero.jpg" alt="Golden-hour light through a window frame and tree leaves on a knockdown wall, with the time display"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/oak-arch.jpg" alt="Late-afternoon light through an arched window and a tree on oak panels"></td>
+    <td width="50%"><img src="docs/screenshots/blinds.jpg" alt="Evening light through blinds and leaves on a knockdown wall"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/curtain.jpg" alt="Golden hour through a sheer curtain on limewash"></td>
+    <td width="50%"><img src="docs/screenshots/night.jpg" alt="Moonlight through blinds at night, with the time display"></td>
+  </tr>
+</table>
 
 ## Options
 

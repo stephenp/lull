@@ -6,7 +6,9 @@ real time (1/fps seconds per frame), so leaves sway naturally as the light moves
   python3 tools/render_video.py out.mp4 --query "scene=window&deco=foliage&wall=knockdown&hud=1" \
       --lat 38.58 --lon -121.49 --date 2026-06-21 --tz America/Los_Angeles --seconds 20
 
-Needs Playwright (Chromium) and ffmpeg. Set CHROME=/path/to/chrome to use a specific browser.
+Needs Playwright and ffmpeg:  pip3 install playwright && python3 -m playwright install chromium
+(or point CHROME at an installed Chrome). On a Mac it renders on the GPU and is far faster
+than a GPU-less machine, where it falls back to software rendering.
 """
 import argparse, asyncio, os, pathlib, shutil, subprocess, sys, tempfile
 from playwright.async_api import async_playwright
@@ -27,8 +29,11 @@ async def main(a):
     frames = int(a.seconds * a.fps)
     tmp = pathlib.Path(tempfile.mkdtemp(prefix='lull-frames-'))
     async with async_playwright() as p:
-        b = await p.chromium.launch(executable_path=os.environ.get('CHROME') or None,
-                                    args=['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'])
+        # On a Mac, let Chrome use the real GPU (much faster). Elsewhere (e.g. a GPU-less
+        # Linux box) fall back to SwiftShader, Chrome's software renderer.
+        gl = ['--ignore-gpu-blocklist'] if sys.platform == 'darwin' else \
+             ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
+        b = await p.chromium.launch(executable_path=os.environ.get('CHROME') or None, args=gl)
         ctx = await b.new_context(viewport={'width': w, 'height': h}, device_scale_factor=1, timezone_id=a.tz)
         await ctx.add_init_script(FAKE_CLOCK)
         pg = await ctx.new_page()
