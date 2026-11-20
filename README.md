@@ -4,12 +4,18 @@
 
 <p align="center">A live Mac wallpaper of sunlight falling across a wall.<br>The light follows the real sun where you are, from first light to moonlight.</p>
 
-![Late-afternoon light through an arched window and a tree, falling on oak panels](docs/screenshots/hero.jpg)
+![Golden-hour light through a window frame and tree leaves on a knockdown wall, with the time display](docs/screenshots/hero.jpg)
+
+### Sunrise to sunset
+
+[![A day of light in 20 seconds: knockdown wall, window frame, foliage, with the breeze on](docs/preview.gif)](docs/preview.mp4)
+
+A whole June day in Sacramento in 20 seconds, with Dynamic Environment on. The GIF is a smaller preview; click it for the full-quality video.
 
 | | |
 |---|---|
-| ![Evening light through blinds and leaves on a knockdown wall](docs/screenshots/blinds.jpg) | ![Golden hour through a sheer curtain on limewash](docs/screenshots/curtain.jpg) |
-| ![Moonlight through blinds at night, with the time display](docs/screenshots/night.jpg) | |
+| ![Late-afternoon light through an arched window and a tree on oak panels](docs/screenshots/oak-arch.jpg) | ![Evening light through blinds and leaves on a knockdown wall](docs/screenshots/blinds.jpg) |
+| ![Golden hour through a sheer curtain on limewash](docs/screenshots/curtain.jpg) | ![Moonlight through blinds at night, with the time display](docs/screenshots/night.jpg) |
 
 Lull is a small, native menu bar app. It works out the sun's position for your location (the NOAA solar algorithm) and renders the light coming through a window onto your wall in real time:
 
@@ -24,7 +30,7 @@ Lull is a small, native menu bar app. It works out the sun's position for your l
 
 It started as a personal recreation of [sunstill.app](https://sunstill.app/).
 
-> **Built with Claude.** The scene, the Mac app and this README were written with Claude (Anthropic). The Swift side was written without a Swift compiler in the loop, so if a build ever fails, the error from `./build.sh` should point straight at the problem.
+> **Fully vibe-coded with Claude.** Lull was built entirely in conversation with Claude (Anthropic). I described what I wanted, reacted to screenshots and builds, and tested it on my Mac. Claude wrote all of the code: the Swift app, the WebGL shaders and JavaScript, the build script, the dev tools and this README. Claude wrote the Swift without a Swift compiler of its own, so a build can occasionally need a small fix, and the error from `./build.sh` should point straight at it. Treat it like any vibe-coded project: it works on my machine, but it hasn't had a careful line-by-line human review.
 
 ## Requirements
 
@@ -105,6 +111,7 @@ open "web/index.html?lat=38.58&lon=-121.49&scene=arch&deco=foliage&wall=wood&hud
 - **Dev tools** (Python + Playwright; set `CHROME=/path/to/chrome` to use a specific browser):
   - `tools/shoot.py out/ name='t=…&scene=…'` renders screenshots.
   - `tools/bench.py` prints the relative GPU cost per redraw. It uses a software renderer, so only ratios between scenes are meaningful.
+  - `tools/render_video.py out.mp4` renders a sunrise-to-sunset time-lapse like the one above (needs ffmpeg). The sun's clock is time-lapsed while the breeze runs in real time.
 
 ## How it works
 
@@ -136,7 +143,8 @@ mac/dist/           the note that ships inside the DMG
 web/src.html        the scene source
 web/solar.js        NOAA sun position and sunrise/sunset
 web/index.html      built, self-contained scene (what the app loads)
-tools/              screenshot and benchmark scripts
+tools/              screenshot, benchmark and video scripts
+docs/               README images and the preview video
 CONTRACT.md         JS API between the app and the scene
 ```
 

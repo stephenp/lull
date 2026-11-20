@@ -6,7 +6,7 @@ url=(pathlib.Path(__file__).resolve().parent.parent / 'web' / 'index.html').as_u
 async def main():
     async with async_playwright() as p:
         b=await p.chromium.launch(executable_path=os.environ.get('CHROME') or None, args=['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist'])
-        ctx=await b.new_context(viewport={'width':1440,'height':900},timezone_id='Europe/Berlin')
+        ctx=await b.new_context(viewport={'width':1440,'height':900},timezone_id=os.environ.get('TZ_ID', 'Europe/Berlin'))
         pg=await ctx.new_page()
         logs=[]
         pg.on('console',lambda m: logs.append(m.text))
