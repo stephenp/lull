@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lull</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #07080c; cursor: default; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  /* time display: bottom-left, drifts a few px over hours (burn-in protection) */
+  #hud { position: fixed; left: 64px; bottom: 56px; pointer-events: none; will-change: transform;
+    font: 400 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Helvetica Neue", sans-serif;
+    color: rgba(255,255,255,0.86); transition: opacity 0.8s ease, color 3s ease; -webkit-font-smoothing: antialiased;
+    font-variant-numeric: tabular-nums; }
+  #hud.hidden { opacity: 0; }
+  #hud { text-shadow: 0 0 14px rgba(0,0,0,0.22); }
+  #hud.dark { color: rgba(30,23,16,0.86); text-shadow: 0 0 14px rgba(255,250,240,0.35); }
+  #hud .time { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+    font-size: clamp(44px, 4.4vw, 76px); font-weight: 200; letter-spacing: -0.025em; line-height: 1; }
+  #hud .time .ap { font-size: 0.36em; font-weight: 400; letter-spacing: 0.06em; margin-left: 0.25em; opacity: 0.7; }
+  #hud .date { margin-top: 10px; font-size: 15px; font-weight: 500; letter-spacing: 0.005em; opacity: 0.85; }
+  #hud .until { margin-top: 2px; font-size: 12.5px; opacity: 0.6; }
+  #sky { display: block; margin-top: 18px; width: 340px; height: 74px; overflow: visible; }
+  #sky .horizon { stroke: currentColor; stroke-width: 1; opacity: 0.22; }
+  #sky .hour { fill: currentColor; opacity: 0.3; }
+  #sky .path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  #sky .night { opacity: 0.16; stroke-dasharray: 1.5 4; }
+  #sky .ahead { opacity: 0.3; }
+  #sky .done { opacity: 0.9; }
+  #sky .halo { fill: currentColor; opacity: 0.14; }
+  #sky .sun { fill: currentColor; }
+  #sky .sun.below { fill: none; stroke: currentColor; stroke-width: 1.2; opacity: 0.6; }
+  #sky text { fill: currentColor; font-size: 10.5px; opacity: 0.55; }
+  #hud.scrub #sky { pointer-events: auto; cursor: ew-resize; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud" class="hidden">
+  <div class="time" id="time"></div>
+  <div class="date" id="date"></div>
+  <div class="until" id="until"></div>
+  <svg id="sky" viewBox="0 0 340 74" aria-hidden="true">
+    <defs>
+      <clipPath id="clipDay"><rect x="-10" y="-20" width="360" height="74"/></clipPath>
+      <clipPath id="clipNight"><rect x="-10" y="54" width="360" height="40"/></clipPath>
+      <clipPath id="clipDone"><rect id="doneRect" x="-10" y="-20" width="0" height="74"/></clipPath>
+    </defs>
+    <line class="horizon" x1="0" y1="54" x2="340" y2="54"/>
+    <g id="hours"></g>
+    <path class="path night" id="pNight" clip-path="url(#clipNight)"/>
+    <path class="path ahead" id="pAhead" clip-path="url(#clipDay)"/>
+    <g clip-path="url(#clipDone)"><path class="path done" id="pDone" clip-path="url(#clipDay)"/></g>
+    <circle class="halo" id="halo" r="9"/>
+    <circle class="sun" id="sun" r="4"/>
+    <text id="tRise" text-anchor="middle" y="70"></text>
+    <text id="tSet" text-anchor="middle" y="70"></text>
+  </svg>
+</div>
+<script>
+/*SOLAR*/
+</script>
+<script>
+(function () {
+'use strict';
+const qs = new URLSearchParams(location.search);
+const num = (k, d) => (qs.has(k) && !isNaN(parseFloat(qs.get(k)))) ? parseFloat(qs.get(k)) : d;
+
+const cfg = {
+  lat: num('lat', 48.137), lon: num('lon', 11.575),
+  scene: qs.get('scene') || 'blinds',
+  decoration: qs.get('deco') || 'foliage',
+  wall: qs.get('wall') || 'knockdown',
+  dynamic: qs.get('dyn') !== '0',
+  timeOverride: qs.has('t') ? new Date(qs.get('t')).getTime() : null,
+  speed: num('speed', 1),
+  showHUD: qs.get('hud') === '1',
+  lowPower: qs.get('lowpower') === '1',
+  paused: false,            // set by the app when the desktop is covered or the displays sleep
+};
+const SCENES = ['blinds', 'window', 'arch'];
+const DECOS = ['none', 'foliage', 'curtain'];
+const WALLS = ['knockdown', 'limewash', 'wood'];
+function normalize() {
+  if (cfg.scene === 'leaves') { cfg.scene = 'window'; cfg.decoration = 'foliage'; } // legacy
+  if (!SCENES.includes(cfg.scene)) cfg.scene = 'blinds';
+  if (cfg.decoration === 'glass' || cfg.decoration === 'prism') cfg.decoration = 'none';   // removed options
+  if (cfg.decoration === 'monstera') cfg.decoration = 'foliage';          // removed option
+  if (!DECOS.includes(cfg.decoration)) cfg.decoration = 'foliage';
+  if (!WALLS.includes(cfg.wall)) cfg.wall = 'knockdown';                 // plaster/brick/linen/concrete → knockdown
+  cfg.dynamic = !!cfg.dynamic;
+}
+normalize();
+let clockBase = { real: Date.now(), sim: cfg.timeOverride != null ? cfg.timeOverride : Date.now() };
+function simNow() {
+  if (cfg.timeOverride == null && cfg.speed === 1) return Date.now();
+  return clockBase.sim + (Date.now() - clockBase.real) * cfg.speed;
+}
+function rebase(simMs) { clockBase = { real: Date.now(), sim: simMs }; }
+
+// ---------- sun state ----------
+let dayCache = { key: '', t: null };
+function dayTimes(ms) {
+  const d = new Date(ms);
+  const key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate() + '|' + cfg.lat + ',' + cfg.lon;
+  if (dayCache.key !== key) dayCache = { key, t: SunMath.times(ms, cfg.lat, cfg.lon) };
+  return dayCache.t;
+}
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+// gentle wind for the dynamic environment: slow 1D value noise over real time
+const h1 = i => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function gust() {  // 0..0.6, rising and falling every ~10-20 s
+  if (!cfg.dynamic) return 0;
+  const x = performance.now() / 1000 / 7 + 50, i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f);
+  const n = h1(i * 3.1) * (1 - u) + h1(i * 3.1 + 3.1) * u;
+  return 0.6 * smooth(0.3, 0.9, n);
+}
+const mix3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+function ramp(stops, x) {
+  if (x <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) if (x <= stops[i][0]) {
+    const t = (x - stops[i - 1][0]) / (stops[i][0] - stops[i - 1][0]);
+    const s = t * t * (3 - 2 * t);
+    return mix3(stops[i - 1][1], stops[i][1], s);
+  }
+  return stops[stops.length - 1][1];
+}
+const SUN_COL = [[-1, [1.0, 0.24, 0.05]], [1, [1.0, 0.33, 0.09]], [4, [1.0, 0.47, 0.18]], [9, [1.0, 0.62, 0.34]],
+  [18, [1.0, 0.78, 0.56]], [30, [1.0, 0.89, 0.74]], [50, [1.0, 0.95, 0.87]]];
+const AMB_COL = [[-18, [0.007, 0.010, 0.024]], [-12, [0.013, 0.019, 0.045]], [-6, [0.040, 0.058, 0.125]],
+  [-2, [0.10, 0.115, 0.20]], [2, [0.20, 0.18, 0.21]], [10, [0.28, 0.265, 0.255]], [40, [0.33, 0.325, 0.32]]];
+
+function sunState(ms) {
+  const pos = SunMath.position(ms, cfg.lat, cfg.lon);
+  const dt = dayTimes(ms);
+  let p; // progress through daylight 0..1
+  if (dt.sunrise != null && dt.sunset != null) p = (ms - dt.sunrise) / (dt.sunset - dt.sunrise);
+  else { const d = new Date(ms); p = (d.getHours() * 60 + d.getMinutes()) / 1440; }
+  p = clamp(p, -0.05, 1.05);
+  const alt = pos.altitude;
+  // virtual sun direction in room space: light moves right->left through the day
+  const rel = (0.5 - p) * 0.9;               // radians, ~±30°
+  const altE = (Math.max(alt, 0) * 0.36 + 3.0) * Math.PI / 180;
+  const s = [Math.sin(rel) * Math.cos(altE), Math.sin(altE), Math.cos(rel) * Math.cos(altE)];
+  let sunI = smooth(-1.2, 3.5, alt) * (1.05 + 0.6 * smooth(0, 25, alt));
+  let sunCol = ramp(SUN_COL, alt);
+  let amb = ramp(AMB_COL, alt);
+  // ---- night: moonlight takes over as the key light ----
+  const night = 1 - smooth(-12, -2, alt);              // 0 in daylight/early twilight, 1 in full night
+  // the moon is a fixed key light for the whole night: same place, same strength, every night
+  const moonI = 0.11 * night;
+  const mrel = -0.22;                                   // slightly from the left
+  const maltE = (35 * 0.36 + 3.0) * Math.PI / 180;      // as if ~35 deg up
+  const ms_ = [Math.sin(mrel) * Math.cos(maltE), Math.sin(maltE), Math.cos(mrel) * Math.cos(maltE)];
+  const moonCol = [0.66, 0.78, 1.0];
+  // sunI reaches 0 at -1.2 deg; moonI is still 0 there (night factor), so the hand-over is seamless
+  const keyIsSun = sunI > 0.0005 || moonI < 0.0005;
+  // very faint distant street lamp as a warm accent against the blue
+  const nightI = night * 0.012;
+  return {
+    pos, dt, p, sunI, sunCol, amb, nightI, night,
+    s: keyIsSun ? s : ms_, keyI: keyIsSun ? sunI : moonI, keyCol: keyIsSun ? sunCol : moonCol,
+  };
+}
+
+// ---------- WebGL ----------
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'low-power' });
+
+const VS = 'attribute vec2 a; void main(){ gl_Position = vec4(a,0.,1.); }';
+const COMMON = `
+precision highp float;
+uniform vec2 uRes; uniform float uTime; uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uAmb;
+uniform float uSunI; uniform float uScene; uniform float uNight; uniform float uWall;
+uniform float uAnim; uniform float uDyn; uniform float uDeco; uniform float uGust; uniform float uNightGrade;
+
+float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p+45.32); return fract(p.x*p.y); }
+float noise(vec2 p){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.-2.*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),u.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x), u.y); }
+float fbm(vec2 p){ float v=0., a=.5; mat2 m=mat2(1.6,1.2,-1.2,1.6); for(int i=0;i<5;i++){ v+=a*noise(p); p=m*p; a*=.5; } return v; }
+float fbm3(vec2 p){ float v=0., a=.5; mat2 m=mat2(1.6,1.2,-1.2,1.6); for(int i=0;i<3;i++){ v+=a*noise(p); p=m*p; a*=.5; } return v; }
+
+float box(vec2 q, vec2 h, float w){ return smoothstep(-w,w,h.x-abs(q.x))*smoothstep(-w,w,h.y-abs(q.y)); }
+float bar(float x, float half_, float w){ return smoothstep(-w, w, abs(x) - half_); } // 1 outside bar
+
+vec2 hash2(vec2 p){ return vec2(hash(p), hash(p+17.31)); }
+`;
+const WALL_FS = COMMON + `// ---- walls: relief height and albedo ----
+// 0 knockdown, 1 limewash, 2 oak panels.
+// The wall is seen from across the room: one screen height is roughly 2.5 m of wall,
+// so texture features are small and only really show in low, raking light.
+// oak veneer panels: full-height ~32 cm panels separated by thin dark reveals.
+// returns x = position across the panel (-0.5..0.5), y = panel id, z = distance to the reveal (wall units)
+const float PANEL = 0.13;
+vec3 oakPanel(vec2 p){
+  float id = floor(p.x/PANEL), f = fract(p.x/PANEL);
+  return vec3(f - 0.5, id, min(f, 1. - f)*PANEL);
+}
+// limewash brush strokes: coats laid on in loose criss-cross passes
+float limeStrokes(vec2 p){
+  // warp the stroke field so marks curve like a wrist-swept brush, then break them into short dabs
+  vec2 wp = p + (vec2(fbm3(p*3. + 1.), fbm3(p*3. + 8.)) - 0.5)*0.18;
+  vec2 d1 = vec2(0.80*wp.x + 0.60*wp.y, -0.60*wp.x + 0.80*wp.y);
+  vec2 d2 = vec2(0.77*wp.x - 0.64*wp.y, 0.64*wp.x + 0.77*wp.y);
+  float a = noise(vec2(d1.x*9., d1.y*40.) + 7.) * smoothstep(0.35, 0.75, noise(d1*vec2(5., 2.) + 2.));
+  float b = noise(vec2(d2.x*9., d2.y*36.) + 3.) * smoothstep(0.35, 0.75, noise(d2*vec2(5., 2.) + 9.));
+  return max(a, b);
+}
+float wallHeight(vec2 p){
+  if (uWall < 0.5) {
+    // knockdown: splattered mud flattened by a trowel = flat-topped islands with soft shoulders
+    vec2 x = p*151.;
+    float n = fbm3(x + 3.) + 0.22*noise(x*2.7 + 9.);
+    float islands = smoothstep(0.50, 0.60, n);
+    float small = smoothstep(0.62, 0.70, noise(x*2.2 + 17.));
+    return islands*0.75 + small*0.25 + noise(p*1100.)*0.05;     // + fine sand in the paint
+  }
+  if (uWall < 1.5) return limeStrokes(p)*0.6 + fbm3(p*9. + 4.)*0.3 + noise(p*260.)*0.12;   // brush ridges, chalky grit
+  // oak panels: smooth veneer faces, crisp square reveals between them
+  vec3 b = oakPanel(p);
+  return 0.15 + 0.85*smoothstep(0.0012, 0.0024, b.z);
+}
+vec3 wallAlbedo(vec2 p, float h){
+  if (uWall < 0.5) {          // knockdown: one coat of warm white paint, tiny AO in the valleys
+    return vec3(0.90, 0.86, 0.79) * (0.965 + 0.025*h + 0.02*fbm3(p*5. + 3.));
+  }
+  if (uWall < 1.5) {          // limewash: translucent mineral coats -> cloudy, uneven, visibly brushed tone
+    float big = fbm(p*2.4 + 5.);                  // broad clouds where coats overlap (~1 m)
+    float mid = fbm3(p*7. + 2.);                  // patchy mottling (~30 cm)
+    float st = limeStrokes(p);                    // the brush marks themselves
+    float tone = clamp(0.5 + 1.25*(big - 0.5) + 0.75*(mid - 0.5) + 0.22*(st - 0.3), 0., 1.);
+    // darker patches are warmer and a little deeper, like pigment pooling in a real lime coat
+    return mix(vec3(0.70, 0.61, 0.51), vec3(0.93, 0.89, 0.82), smoothstep(0.1, 0.9, tone));
+  }
+  // crown-cut oak veneer in a warm honey tone: fine, wavy lengthwise grain with the odd soft flame,
+  // each panel a slightly different leaf; thin dark reveals between panels
+  vec3 b = oakPanel(p);
+  float hb = hash(vec2(b.y, 3.1));
+  float xl = b.x*PANEL;
+  float yy = p.y + hb*7.;
+  float warp = (fbm3(vec2(xl*22., yy*2.6) + hb*11.) - 0.5)*0.022;          // grain wanders and waves
+  float lines = 0.5 + 0.5*sin((xl + warp)*1150.);
+  float streak = fbm3(vec2((xl + warp)*70., yy*0.9) + hb*5.);               // broader light/dark figure
+  float flame = smoothstep(0.62, 0.9, sin((yy*0.5 + 30.*(xl - (hb - 0.5)*0.05)*(xl - (hb - 0.5)*0.05))*120.)*0.5 + 0.5)
+              * smoothstep(0.35, 0.0, abs(b.x));                          // soft cathedral flame near the middle
+  vec3 oak = mix(vec3(0.80, 0.53, 0.30), vec3(0.88, 0.62, 0.37), hb);
+  vec3 c = oak * (0.92 + 0.08*lines + 0.16*(streak - 0.5) - 0.07*flame);
+  float reveal = smoothstep(0.0012, 0.0024, b.z);
+  return c * mix(0.18, 1., reveal);
+}
+
+
+// pass 1: wall albedo + relief height, rendered once per wall/size change
+void main(){
+  vec2 p = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;
+  float h = wallHeight(p);
+  gl_FragColor = vec4(wallAlbedo(p, h), clamp(h*0.4 + 0.5, 0., 1.));
+}`;
+const LIGHT_FS = COMMON + `mat2 rot(float a){ float c=cos(a), s=sin(a); return mat2(c,-s,s,c); }
+float sdSeg(vec2 p, vec2 a, vec2 b){ vec2 pa=p-a, ba=b-a; float h=clamp(dot(pa,ba)/dot(ba,ba),0.,1.); return length(pa-ba*h); }
+
+// ---- tree outside: near leaf sprays on twigs, mid clumps, far canopy with pinhole sun flecks ----
+float leaflet(vec2 p, float L, float W, float w, float shape, float bend){
+  p.y -= bend*p.x*p.x/L;                         // leaves curl slightly
+  float x = clamp(p.x / L, 0., 1.);
+  float hw = W * pow(sin(3.14159*x), shape) * (1. - 0.3*x);
+  float d = max(abs(p.y) - hw, max(-p.x, p.x - L));
+  return smoothstep(w, -w, d);
+}
+float spray(vec2 q, vec2 S, float a0, float curv, float len, float lsz, float seed, float w){
+  // whole twig sways around its base, more during gusts
+  float a = a0 + uDyn*(sin(uAnim*0.63 + seed)*0.6 + sin(uAnim*1.71 + seed*2.3)*0.3)*0.024*(0.35 + uGust);
+  vec2 p = rot(a)*(q - S);
+  if (p.x < -0.06 || p.x > len + 0.14 || abs(p.y - curv*p.x*p.x) > 0.15) return 0.;
+  float twig = abs(p.y - curv*p.x*p.x);
+  float cov = smoothstep(0.0028 + w, 0.0028 - w, twig + p.x*0.002) * step(0., p.x) * step(p.x, len);
+  float shape = 0.55 + 0.4*hash(vec2(seed, 1.7));   // species-ish: rounder or more lanceolate per twig
+  for (int k = 0; k < 9; k++){
+    float fk = float(k);
+    float t = (fk + 0.6)/9.5*len;
+    vec2 c = vec2(t, curv*t*t);
+    float tang = atan(2.*curv*t);
+    float sz = lsz*(1.05 - 0.4*fk/9.)*(0.82 + 0.36*hash(vec2(fk, seed)));
+    float side = mod(fk, 2.) < 0.5 ? 1. : -1.;
+    float fl = uDyn*sin(uAnim*(2.6 + 2.8*hash(vec2(fk, seed + 1.))) + fk*1.3 + seed)*0.09*(0.25 + uGust);
+    float la = tang + side*(0.75 + 0.35*hash(vec2(fk, seed + 2.))) + fl;
+    vec2 d = rot(la)*(p - c);
+    float pet = sz*0.16;                             // short leaf stalk
+    cov = max(cov, smoothstep(0.0011 + w, 0.0011 - w, abs(d.y)) * step(0., d.x) * step(d.x, pet));
+    float W = sz*0.36*(0.72 + 0.28*cos(fl*4. + fk));  // leaves turn edge-on as they flutter
+    cov = max(cov, leaflet(d - vec2(pet, 0.), sz, W, w, shape, side*0.08*(hash(vec2(fk, seed + 3.)) - 0.3)));
+  }
+  vec2 tip = vec2(len, curv*len*len);
+  cov = max(cov, leaflet(rot(atan(2.*curv*len))*(p - tip), lsz*0.8, lsz*0.26, w, shape, 0.));
+  return cov;
+}
+// clumpy canopy of leaf silhouettes; density follows a clump mask that thickens toward the top-right
+float canopy(vec2 q, float scale, vec2 off, float w, float seed, float flutter, float bias){
+  vec2 x = q*scale + off;
+  // only the 2x2 cells nearest this point: leaves are kept within ~1 cell of their centre,
+  // and these layers are blurred, so the far neighbours never contribute visibly
+  vec2 id = floor(x - 0.5);
+  float m = 0.;
+  for (int j=0;j<=1;j++) for (int i=0;i<=1;i++){
+    vec2 cell = id + vec2(float(i), float(j));
+    vec2 cq = (cell + 0.5 - off)/scale;
+    float dn = 0.62*noise(cq*2.6 + seed) + 0.31*noise(cq*5.2 + seed + 3.) + 0.06 + bias + 0.34*(cq.x*0.75 + cq.y);
+    if (hash(cell + seed*3.1) > smoothstep(0.40, 0.62, dn)) continue;
+    for (int k=0;k<2;k++){
+      float fk = float(k);
+      vec2 c = cell + 0.25 + 0.5*hash2(cell + seed + fk*7.7);
+      float a = hash(cell*1.7 + seed + fk*3.3)*6.2831
+              + uDyn*sin(uAnim*(2.2 + 2.*hash(cell + fk)) + cell.x + fk)*0.11*flutter*(0.3 + uGust);
+      vec2 dd = rot(a)*(x - c);
+      float L = 0.5 + 0.22*hash(cell + 5. + fk);
+      float tx = clamp(dd.x/L, -1., 1.);
+      float hw = 0.30*(1. - tx*tx)*(1. + 0.2*tx);
+      m = max(m, smoothstep(w, -w, max(abs(dd.y) - hw, abs(dd.x) - L)));
+    }
+  }
+  return m;
+}
+// soft flecks of light leaking through the distant canopy (pinhole images of the sun)
+float sunFlecks(vec2 q, float w){
+  vec2 x = q*9.;
+  vec2 id = floor(x);
+  float m = 0.;
+  for (int j=-1;j<=1;j++) for (int i=-1;i<=1;i++){
+    vec2 cell = id + vec2(float(i), float(j));
+    float h = hash(cell + 4.1);
+    if (h < 0.35) continue;
+    vec2 c = cell + 0.2 + 0.6*hash2(cell + 9.3);
+    float r = 0.22 + 0.22*hash(cell + 8.3);
+    float d = length((x - c)*vec2(1., 1.15));
+    float f = smoothstep(r + w*9. + 0.05, r*0.2, d);
+    m = max(m, f*f*(0.45 + 0.55*hash(cell + 2.2)));
+  }
+  return m;
+}
+vec3 treeOutside(vec2 q, float w){
+  vec2 gs = uDyn*vec2(sin(uAnim*0.29)*0.007 + sin(uAnim*0.83)*0.002, cos(uAnim*0.23)*0.004)*(0.4 + uGust);
+  float far = canopy(q + gs*0.5, 4.5, vec2(3., 7.), (w*3. + 0.02)*4.5, 11., 0.4, 0.12);
+  float fl = sunFlecks(q + gs*0.5, w);
+  float farT = 1. - 0.82*far + 0.75*far*fl;
+  float mid = canopy(q + gs*0.8, 7.5, vec2(1., 2.), (w*1.4 + 0.006)*7.5, 23., 0.8, 0.02);
+  float br1 = q.y - (0.30 + 0.08*sin(q.x*3.1 + 0.4) - 0.42*q.x) + gs.y;
+  float br2 = q.y - (-0.02 + 0.06*sin(q.x*4.3 + 2.) - 0.9*(q.x - 0.25)) + gs.y*0.7;
+  float bw = w*1.2 + 0.003;
+  float branch = smoothstep(0.009 + bw, 0.009 - bw, abs(br1)) * smoothstep(-0.3, 0.1, q.x);
+  branch = max(branch, smoothstep(0.005 + bw, 0.005 - bw, abs(br2)) * smoothstep(0.05, 0.25, q.x) * step(q.y, 0.25));
+  // near twigs (crisp) and a second tier a little further out (softer)
+  float nw = w*0.55 + 0.0018, nw2 = w*1.1 + 0.004;
+  float near = 0., near2 = 0.;
+  near = max(near, spray(q, vec2(0.66, 0.42), 3.55,  0.55, 0.58, 0.115, 1.0, nw));
+  near = max(near, spray(q, vec2(0.64, 0.06), 3.28, -0.45, 0.48, 0.105, 2.0, nw));
+  near = max(near, spray(q, vec2(0.26, 0.52), 4.35,  0.35, 0.42, 0.10, 3.0, nw));
+  near = max(near, spray(q, vec2(0.68, -0.20), 2.95, 0.65, 0.36, 0.095, 4.0, nw));
+  near2 = max(near2, spray(q, vec2(0.50, 0.50), 3.95, -0.30, 0.34, 0.085, 6.0, nw2));
+  near2 = max(near2, spray(q, vec2(0.70, 0.24), 3.05,  0.40, 0.30, 0.080, 7.0, nw2));
+  near2 = max(near2, spray(q, vec2(0.05, 0.50), 4.55,  0.50, 0.26, 0.075, 8.0, nw2));
+  // thin leaves pass a little green-gold light; thicker branches don't
+  vec3 leafT = vec3(0.06, 0.085, 0.03);
+  vec3 T = vec3(farT) * (1. - mid*(1. - vec3(0.30, 0.33, 0.25)));
+  T *= 1. - 0.75*branch;
+  T *= 1. - near2*0.8*(1. - leafT);
+  T *= 1. - near*(1. - leafT);
+  return T;
+}
+
+// decoration between the sun and the wall: returns colour transmission
+vec3 decoration(vec2 q, float w){
+  vec3 T = vec3(1.);
+  // each decoration is compiled into its own slim shader variant (DECO is #defined per program)
+#if DECO == 1          // foliage: tree outside
+    T *= treeOutside(q, w);
+#elif DECO == 2        // sheer curtain drawn across the window, pulled slightly aside on the right
+    float t = uAnim*uDyn;
+    float edge = 0.30 - 0.05*q.y + uDyn*(sin(t*0.29)*0.009 + sin(t*0.77 + q.y*3.5)*0.0035);
+    float inC = smoothstep(edge + w + 0.006, edge - w - 0.006, q.x);
+    // irregular folds: fabric at a steep angle to the light = more layers = darker vertical bands
+    float drift = uDyn*sin(t*0.21 + q.y*1.7)*0.006;
+    float x = q.x + drift + 0.02*sin(q.y*2.3 + q.x*3.);
+    float folds = 0.55*sin(x*31. + 0.8*sin(x*7.3)) + 0.3*sin(x*67. + 1.7) + 0.15*sin(x*13. + 4.);
+    folds = 0.5 + 0.5*folds;
+    float billow = 1. + uDyn*0.035*sin(t*0.5 + q.x*4.);          // breeze pushing the fabric
+    float Tc = (0.20 + 0.30*folds)*billow;
+    float hem = exp(-abs(q.x - edge)/0.006);                     // doubled-over leading edge
+    Tc *= 1. - 0.35*hem;
+    T *= mix(1., Tc, inC) * mix(vec3(1.), vec3(1.0, 0.985, 0.96), inC);
+#endif
+  return T;
+}
+
+// light transmitted through the aperture at local coords q, with blur w
+vec3 aperture(vec2 q, float w, float t, float scene){
+  vec2 hw = vec2(0.46, 0.36);
+  float box0 = box(q, hw, w);
+  float L = box0;
+  if (scene < 0.5) {               // blinds
+    float sway = uDyn*(sin(uAnim*0.37)*0.0008 + sin(uAnim*0.91+1.3)*0.0003);
+    float period = 0.052;
+    float y = q.y + sway + q.x*0.003*sin(uAnim*0.23)*uDyn;
+    y += 0.004*(1. - (q.x*q.x)/(0.46*0.46));               // slats sag a touch in the middle
+    float m = mod(y, period) - 0.5*period;
+    float open = 0.48 + 0.07*(hash(vec2(floor(y/period), 3.)) - 0.5);   // no two slats tilt exactly alike
+    float ws = w*1.15 + 0.0025;
+    L *= smoothstep(-ws, ws, open*0.5*period - abs(m));
+    L *= mix(1., bar(q.x + 0.30, 0.0018, w*0.8+0.0015), 0.55);
+    L *= mix(1., bar(q.x - 0.30, 0.0018, w*0.8+0.0015), 0.55);
+    float cx = q.x - 0.43 + uDyn*sin(uAnim*0.5 + q.y*3.)*0.002;
+    L *= mix(1., bar(cx, 0.0028, w+0.002), 0.85 * step(q.y, 0.34) );
+    L *= smoothstep(-w, w, (hw.y - 0.035) - q.y);
+  } else if (scene < 1.5) {        // window with mullions
+    float mw = w + 0.0015;
+    L *= bar(q.x, 0.016, mw);
+    L *= bar(q.y + 0.04, 0.014, mw);
+    L *= bar(q.y - 0.22, 0.008, mw);
+    L *= bar(q.y + 0.27, 0.008, mw);
+  } else {                         // tall arched window: divided lites below, a fanlight in the arch
+    float r = 0.30;
+    vec2 c = vec2(0., 0.36 - r);                                  // spring line of the arch
+    float inside = q.y < c.y ? smoothstep(w, -w, max(abs(q.x) - r, -0.36 - q.y))
+                             : smoothstep(w, -w, length(q - c) - r);
+    L = inside;
+    float mw = w + 0.0015;
+    L *= bar(q.x, 0.011, mw);                                     // central mullion
+    L *= bar(q.y - c.y, 0.013, mw);                               // transom at the spring line
+    L *= bar(q.y + 0.13, 0.008, mw);                              // glazing bars
+    L *= bar(q.x - r*0.5, 0.006, mw) * bar(q.x + r*0.5, 0.006, mw) + step(c.y, q.y);   // (lower sash only)
+    if (q.y > c.y) {                                              // fanlight: radial bars + inner arc
+      vec2 d = q - c;
+      float rad = min(abs(d.x*0.7071 - d.y*0.7071), abs(d.x*0.7071 + d.y*0.7071));
+      L *= smoothstep(0.006 - mw, 0.006 + mw, rad) * 1. + (1. - step(r*0.5, length(d)))*(1. - smoothstep(0.006 - mw, 0.006 + mw, rad));
+      L *= smoothstep(0.006 - mw, 0.006 + mw, abs(length(d) - r*0.5));
+    }
+  }
+  vec3 T = decoration(q, w);
+  return L * T;
+}
+
+
+// pass 2: light through the window + decoration, at reduced resolution (it's soft anyway).
+// rgb = sqrt(light / 2.5) for precision in the dark end, a = soft window glow
+void main(){
+  vec2 p = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;
+  vec3 P = vec3(p, 0.);
+  float phi = 0.50;
+  vec3 n = vec3(sin(phi), 0., cos(phi));
+  vec3 u = vec3(cos(phi), 0., -sin(phi));
+  vec3 C = vec3(-0.04, 0.08, 1.05);
+  vec3 s = normalize(uSun);
+  float sn = dot(s, n);
+  vec3 light = vec3(0.);
+  float glow = 0.;
+  if (sn > 0.05 && uSunI > 0.0005) {
+    float t = dot(C - P, n) / sn;
+    vec3 Q = P + s*t;
+    vec2 q = vec2(dot(Q - C, u), Q.y - C.y);
+    float w = 0.003 + 0.011*t;
+    glow = box(q, vec2(0.46, 0.36), 0.30);
+    // skip all the window/leaf maths where no direct light can land
+    if (box(q, vec2(0.46, 0.36), w + 0.03) > 0.) {
+      light = aperture(q, w, t, uScene);
+      light *= 0.82 + 0.18*box(q, vec2(0.46, 0.36), 0.22);
+      light *= 0.985 + 0.015*uDyn*sin(uAnim*0.8 + sin(uAnim*0.31)*2.);
+    }
+  }
+  gl_FragColor = vec4(sqrt(clamp(light/2.5, 0., 1.)), glow);
+}`;
+const COMP_FS = COMMON + `
+uniform sampler2D uWallTex; uniform sampler2D uLightTex; uniform float uRelief;
+// pass 3: combine wall + light at full resolution (cheap: a few texture reads and some maths)
+void main(){
+  vec2 frag = gl_FragCoord.xy;
+  vec2 uv = frag / uRes;
+  vec2 p = (frag - 0.5*uRes) / uRes.y;
+  vec2 px = 1. / uRes;
+  vec4 W = texture2D(uWallTex, uv);
+  float hx = texture2D(uWallTex, uv + vec2(px.x, 0.)).a - texture2D(uWallTex, uv - vec2(px.x, 0.)).a;
+  float hy = texture2D(uWallTex, uv + vec2(0., px.y)).a - texture2D(uWallTex, uv - vec2(0., px.y)).a;
+  float dpx = 2. / uRes.y;                                      // p-units across two texels
+  vec3 N = normalize(vec3(-hx/0.4/dpx*uRelief, -hy/0.4/dpx*uRelief, 1.));
+  vec3 albedo = W.rgb;
+  vec4 Lt = texture2D(uLightTex, uv);
+  vec3 light = Lt.rgb*Lt.rgb*2.5;
+  float glow = Lt.a;
+
+  vec3 P = vec3(p, 0.);
+  float phi = 0.50;
+  vec3 n = vec3(sin(phi), 0., cos(phi));
+  vec3 u = vec3(cos(phi), 0., -sin(phi));
+  vec3 C = vec3(-0.04, 0.08, 1.05);
+  vec3 s = normalize(uSun);
+  float sn = dot(s, n);
+  float scene = uScene;
+  float ndl = max(dot(N, s), 0.);
+  vec3 direct = uSunCol * uSunI * light * ndl * 1.25;
+  vec3 bounce = uSunCol * uSunI * glow * 0.09;
+  // ambient: room bounce, falls off downward and to corners
+  float amb_grad = 0.82 + 0.28*(p.y+0.5) - 0.12*abs(p.x);
+  vec3 ambient = uAmb * amb_grad * (0.92 + 0.08*N.y*8. + 0.04*(N.x*s.x));
+  // cool skylight through the same window: unshadowed by the leaves, it tints the shade blue
+  // against the warm sun patch (why real shadows on a sunlit wall look bluish)
+  vec3 sd = normalize(vec3(-0.12, 0.30, 1.0));
+  float tsk = dot(C - P, n) / dot(sd, n);
+  vec3 Qs = P + sd*tsk;
+  float skyWin = box(vec2(dot(Qs - C, u), Qs.y - C.y), vec2(0.46, 0.36), 0.32) * (scene < 0.5 ? 0.6 : 1.);
+  float ambL = dot(uAmb, vec3(0.30, 0.59, 0.11));
+  // light that has bounced around a room finished in this material picks up its colour
+  // (a wood-panelled room glows honey, a white room stays neutral)
+  vec3 roomTint = pow(albedo / max(dot(albedo, vec3(0.2126, 0.7152, 0.0722)), 1e-3), vec3(0.7));
+  ambient *= roomTint;
+  ambient += vec3(0.70, 0.82, 1.0) * ambL * skyWin * 0.42 * (1. - uNightGrade);
+  // faint street lamp through the window at night
+  vec3 nightL = vec3(0.);
+  if (uNight > 0.001) {
+    vec3 s2 = normalize(vec3(-0.42, -0.12, 1.0));
+    float t2 = dot(C - P, n) / dot(s2, n);
+    vec3 Q2 = P + s2*t2;
+    vec2 q2 = vec2(dot(Q2 - C, u), Q2.y - C.y);
+    nightL = vec3(1.0, 0.74, 0.50) * uNight * box(q2, vec2(0.46,0.36), 0.12);
+  }
+  vec3 col = albedo * (ambient + direct + bounce);
+  // night vision: in low light colour fades and shifts blue (Purkinje shift), like day-for-night film grading
+  if (uNightGrade > 0.001) {
+    float lum = dot(col, vec3(0.30, 0.59, 0.11));
+    vec3 scot = lum * vec3(0.52, 0.70, 1.0) * 1.3;
+    col = mix(col, scot, 0.82*uNightGrade);
+    col += vec3(0.0015, 0.0025, 0.0055) * uNightGrade;   // deep navy floor instead of dead black
+  }
+  col += albedo * nightL;   // the distant lamp keeps a little warmth as an accent
+
+  // vignette
+  vec2 vq = frag / uRes - 0.5;
+  col *= 1. - 0.55*dot(vq*vec2(0.9,1.15), vq*vec2(0.9,1.15));
+
+  // filmic tonemap + gamma
+  float Lin = max(dot(col, vec3(0.2126, 0.7152, 0.0722)), 1e-5);
+  vec3 lumMapped = col * (1. - exp(-Lin*1.35)) / Lin;          // keeps hue and saturation
+  vec3 chanMapped = 1. - exp(-col*1.35);                        // per-channel: desaturates highlights
+  col = mix(lumMapped, chanMapped, 0.45);
+  col = col / max(1., max(col.r, max(col.g, col.b)));            // soft gamut clip
+  col = pow(col, vec3(1./2.2));
+  // warm/cool grade
+  col = mix(col, col*vec3(1.02,1.0,0.97), 0.5);
+  // dither / fine grain
+  col += (hash(frag + fract(uTime)*91.7) - 0.5) / 255. * 2.0;
+  gl_FragColor = vec4(col, 1.);
+}`;
+
+
+// ---------- GPU passes ----------
+// wall (once) -> light (reduced res, each frame) -> composite (full res, cheap)
+const P = {};                                  // programs: { prog, loc: {} }
+let wallFB = null, lightFB = null, wallDirty = true;
+const LIGHT_SCALE = 0.5;                       // light pattern resolution relative to the canvas
+const RELIEF = { knockdown: 0.00045, limewash: 0.0014, wood: 0.0012 };
+function compile(type, src) {
+  const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(sh)); return null; }
+  return sh;
+}
+function program(fsSrc) {
+  const vs = compile(gl.VERTEX_SHADER, VS), fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+  if (!vs || !fs) return null;
+  const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs);
+  gl.bindAttribLocation(prog, 0, 'a'); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(prog)); return null; }
+  return { prog, loc: {} };
+}
+const lightVariants = {};
+function lightProgram() {          // one compiled variant per decoration, built on first use
+  const d = Math.max(0, DECOS.indexOf(cfg.decoration));
+  if (!(d in lightVariants)) lightVariants[d] = program('#define DECO ' + d + '\n' + LIGHT_FS);
+  return lightVariants[d];
+}
+function initGL() {
+  if (!gl) return false;
+  P.wall = program(WALL_FS); P.comp = program(COMP_FS);
+  if (!P.wall || !P.comp || !lightProgram()) return false;
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  return true;
+}
+function target(fb, w, h) {                   // (re)create an RGBA8 render target
+  if (fb && fb.w === w && fb.h === h) return fb;
+  if (fb) { gl.deleteTexture(fb.tex); gl.deleteFramebuffer(fb.fbo); }
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fbo, w, h };
+}
+function use(pp) { gl.useProgram(pp.prog); return pp; }
+function u(pp, name) { return name in pp.loc ? pp.loc[name] : (pp.loc[name] = gl.getUniformLocation(pp.prog, name)); }
+function u1(pp, n, v) { gl.uniform1f(u(pp, n), v); }
+function u2(pp, n, a, b) { gl.uniform2f(u(pp, n), a, b); }
+function u3(pp, n, v) { gl.uniform3f(u(pp, n), v[0], v[1], v[2]); }
+const hasGL = initGL();
+
+function resize() {
+  const dpr = cfg.lowPower ? 0.75 : Math.min(window.devicePixelRatio || 1, 1.25);
+  const w = Math.max(1, Math.round(innerWidth * dpr)), h = Math.max(1, Math.round(innerHeight * dpr));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; wallDirty = true; }
+}
+addEventListener('resize', () => { resize(); requestDraw(); });
+
+// ---------- time display ----------
+const $ = id => document.getElementById(id);
+const SKY_W = 340, HORIZON = 54, SKY_TOP = 6;
+const fmtTime = new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' });
+const fmtDate = new Intl.DateTimeFormat([], { weekday: 'long', month: 'long', day: 'numeric' });
+const frac = ms => { const d = new Date(ms); return (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) / 86400; };
+const hudCache = {};
+function setText(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).textContent = v; } }
+function setHTML(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).innerHTML = v; } }
+function setAttr(id, k, v) { const key = id + '.' + k; if (hudCache[key] !== v) { hudCache[key] = v; $(id).setAttribute(k, v); } }
+function timeHTML(ms) {          // honours the Mac's 12/24-hour setting; AM/PM set small
+  return fmtTime.formatToParts(new Date(ms)).map(p =>
+    p.type === 'dayPeriod' ? `<span class="ap">${p.value}</span>` : p.type === 'literal' && /\s/.test(p.value) ? '' : p.value).join('');
+}
+function duration(ms) {
+  const m = Math.max(0, Math.round(ms / 60000)), h = Math.floor(m / 60);
+  return h ? `${h} h ${m % 60} min` : `${m} min`;
+}
+const altY = alt => alt >= 0 ? HORIZON - (HORIZON - SKY_TOP) * Math.min(alt, 75) / 75
+                             : HORIZON + 14 * Math.min(-alt, 30) / 30;
+// today's real sun-height curve, sampled every 10 minutes (only rebuilt when the day or place changes)
+function skyCurve(ms) {
+  const d = new Date(ms); d.setHours(0, 0, 0, 0);
+  const key = d.getTime() + '|' + cfg.lat + ',' + cfg.lon;
+  if (hudCache.curveKey === key) return;
+  hudCache.curveKey = key;
+  let path = '';
+  for (let i = 0; i <= 144; i++) {
+    const alt = SunMath.position(d.getTime() + i * 600000, cfg.lat, cfg.lon).altitude;
+    path += (i ? 'L' : 'M') + (i / 144 * SKY_W).toFixed(1) + ' ' + altY(alt).toFixed(1);
+  }
+  ['pNight', 'pAhead', 'pDone'].forEach(id => $(id).setAttribute('d', path));
+  $('hours').innerHTML = [6, 12, 18].map(h => `<circle class="hour" cx="${h / 24 * SKY_W}" cy="${HORIZON}" r="1.2"/>`).join('');
+}
+function updateHUD(ms, st) {
+  const hud = $('hud');
+  hud.classList.toggle('hidden', !cfg.showHUD);
+  if (!cfg.showHUD) return;
+  setHTML('time', timeHTML(ms));
+  setText('date', fmtDate.format(new Date(ms)));
+  const dt = st.dt;
+  let until;
+  if (dt.polar) until = dt.polar === 'day' ? 'Midnight sun' : 'Polar night';
+  else if (ms < dt.sunrise) until = 'Sunrise in ' + duration(dt.sunrise - ms);
+  else if (ms < dt.sunset) until = 'Sunset in ' + duration(dt.sunset - ms);
+  else until = 'Sunrise in ' + duration(dt.sunrise + 86400000 - ms);
+  setText('until', until);
+
+  skyCurve(ms);
+  const x = frac(ms) * SKY_W, alt = st.pos.altitude, y = altY(alt);
+  setAttr('doneRect', 'width', (x + 10).toFixed(1));
+  setAttr('sun', 'cx', x.toFixed(1)); setAttr('sun', 'cy', y.toFixed(1));
+  setAttr('halo', 'cx', x.toFixed(1)); setAttr('halo', 'cy', y.toFixed(1));
+  $('sun').classList.toggle('below', alt < 0);
+  setAttr('halo', 'opacity', alt < 0 ? '0' : '0.14');
+  const showTimes = !dt.polar;
+  setText('tRise', showTimes ? fmtTime.format(new Date(dt.sunrise)) : '');
+  setText('tSet', showTimes ? fmtTime.format(new Date(dt.sunset)) : '');
+  if (showTimes) { setAttr('tRise', 'x', (frac(dt.sunrise) * SKY_W).toFixed(1)); setAttr('tSet', 'x', (frac(dt.sunset) * SKY_W).toFixed(1)); }
+
+  // burn-in protection: wander slowly within a small box (periods of a few hours, never quite repeating)
+  const t = Date.now() / 1000;
+  const dx = 14 * Math.sin(t / 2203) + 4 * Math.sin(t / 911 + 1.3);
+  const dy = 9 * Math.sin(t / 3119 + 0.7) + 3 * Math.sin(t / 1307 + 2.1);
+  hud.style.transform = `translate3d(${dx.toFixed(1)}px, ${(-dy).toFixed(1)}px, 0)`;
+  hud.classList.toggle('scrub', cfg.timeOverride != null || cfg.speed !== 1);
+  hud.classList.toggle('dark', hudOnBright);              // measured from the pixels behind it
+}
+
+// ---------- loop ----------
+const t0 = performance.now();
+let lastHud = 0;
+let hudOnBright = false, lastLuma = -1e9;
+// Read back the rendered wall behind the time display so its text can flip dark/light.
+// Must run right after drawing (the drawing buffer isn't preserved); a small, once-a-second read.
+function measureBehindHUD() {
+  const r = $('hud').getBoundingClientRect();
+  if (!r.width) return;
+  const k = canvas.width / innerWidth;
+  const x = Math.max(0, Math.floor(r.left * k)), w = Math.min(canvas.width - x, Math.ceil(r.width * k));
+  const y = Math.max(0, Math.floor(canvas.height - r.bottom * k)), h = Math.min(canvas.height - y, Math.ceil(r.height * k));
+  if (w <= 0 || h <= 0) return;
+  const px = new Uint8Array(w * h * 4);
+  gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let sum = 0, n = 0;
+  for (let i = 0; i < px.length; i += 4 * 37) { sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]; n++; }
+  const avg = sum / Math.max(1, n);
+  hudOnBright = hudOnBright ? avg > 140 : avg > 160;   // hysteresis so it doesn't flicker at the threshold
+}
+let drawCount = 0;
+function draw(force) {
+  drawCount++;
+  const now = simNow();
+  const st = sunState(now);
+  lastState = { now, st };
+  if (hasGL) {
+    const W = canvas.width, H = canvas.height;
+    const anim = cfg.dynamic ? (performance.now() - t0) / 1000 + 20 : 20;
+    // 1) wall: only when the surface or size changed
+    if (wallDirty || !wallFB || wallFB.w !== W || wallFB.h !== H) {
+      wallFB = target(wallFB, W, H);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, wallFB.fbo); gl.viewport(0, 0, W, H);
+      const pw = use(P.wall); u2(pw, 'uRes', W, H); u1(pw, 'uWall', WALLS.indexOf(cfg.wall));
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      wallDirty = false;
+    }
+    // 2) light pattern at reduced resolution
+    const ls = cfg.lowPower ? 0.35 : LIGHT_SCALE;
+    const LW = Math.max(1, Math.round(W * ls)), LH = Math.max(1, Math.round(H * ls));
+    lightFB = target(lightFB, LW, LH);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, lightFB.fbo); gl.viewport(0, 0, LW, LH);
+    const pl = use(lightProgram());
+    u2(pl, 'uRes', LW, LH); u3(pl, 'uSun', st.s); u1(pl, 'uSunI', st.keyI);
+    u1(pl, 'uScene', Math.max(0, SCENES.indexOf(cfg.scene))); u1(pl, 'uAnim', anim); u1(pl, 'uDyn', cfg.dynamic ? 1 : 0);
+    u1(pl, 'uGust', gust());
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // 3) composite to the screen
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+    const pc = use(P.comp);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, wallFB.tex); gl.uniform1i(u(pc, 'uWallTex'), 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, lightFB.tex); gl.uniform1i(u(pc, 'uLightTex'), 1);
+    u2(pc, 'uRes', W, H); u1(pc, 'uTime', (performance.now() - t0) / 1000);
+    u3(pc, 'uSun', st.s); u3(pc, 'uSunCol', st.keyCol); u3(pc, 'uAmb', st.amb); u1(pc, 'uSunI', st.keyI);
+    u1(pc, 'uNightGrade', st.night); u1(pc, 'uNight', st.nightI);
+    u1(pc, 'uScene', Math.max(0, SCENES.indexOf(cfg.scene))); u1(pc, 'uRelief', RELIEF[cfg.wall] || 0.001);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (cfg.showHUD && (force || performance.now() - lastLuma > 1000)) { measureBehindHUD(); lastLuma = performance.now(); }
+  } else {   // no WebGL (never expected in WKWebView): flat wall tone
+    const a = st.amb, t = v => Math.round(255 * Math.pow(1 - Math.exp(-v * 1.1), 1 / 2.2));
+    document.body.style.background = `rgb(${t(a[0] + st.keyI * 0.3)},${t(a[1] + st.keyI * 0.27)},${t(a[2] + st.keyI * 0.22)})`;
+  }
+  const pn = performance.now();
+  if (force || pn - lastHud > (cfg.speed !== 1 || cfg.timeOverride != null ? 66 : 1000)) { updateHUD(now, st); lastHud = pn; }
+}
+let lastState = null, drawQueued = false, loopTimer = 0;
+// How often to redraw. Motion in the dynamic environment is slow and soft, so 20 fps is plenty;
+// a still scene only needs the sun's slow drift, and a time preview needs smooth playback.
+function frameInterval() {
+  if (cfg.lowPower) return 10000;
+  if (cfg.speed !== 1 || cfg.timeOverride != null) return 1000 / 30;
+  if (!cfg.dynamic) return 5000;
+  // match the frame rate to how much is actually moving: fluttering leaves need the most,
+  // bare blinds or windows very little
+  return 1000 / ({ foliage: 20, curtain: 15 }[cfg.decoration] || 12);
+}
+function loop() {
+  clearTimeout(loopTimer);
+  if (cfg.paused) return;                       // nothing visible: no GPU work at all until resumed
+  if (document.hidden) { loopTimer = setTimeout(loop, 1000); return; }
+  requestAnimationFrame(() => {
+    const t = performance.now();
+    draw(false);
+    loopTimer = setTimeout(loop, Math.max(0, frameInterval() - (performance.now() - t)));
+  });
+}
+function requestDraw() {
+  if (!drawQueued) { drawQueued = true; requestAnimationFrame(() => { drawQueued = false; draw(true); }); }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) loop(); });
+
+// ---------- public API ----------
+window.lull = {
+  _draws() { return drawCount; },
+  // dev: average ms per full redraw (forces GPU sync each frame)
+  _bench(n) {
+    n = n || 20; const px = new Uint8Array(4);
+    draw(true); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    const t = performance.now();
+    for (let i = 0; i < n; i++) { draw(true); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); }
+    return (performance.now() - t) / n;
+  },
+  setConfig(o) {
+    o = o || {};
+    const cur = simNow();
+    const wasPaused = cfg.paused, wasSlow = frameInterval() > 1000;
+    for (const k of ['lat', 'lon', 'scene', 'decoration', 'wall', 'dynamic', 'speed', 'showHUD', 'lowPower', 'paused']) if (o[k] !== undefined && o[k] !== null) cfg[k] = o[k];
+    if ('timeOverride' in o) cfg.timeOverride = o.timeOverride;
+    if (o.wall !== undefined) wallDirty = true;
+    normalize();
+    // timeOverride is a starting point that then advances at `speed`
+    if ('timeOverride' in o && o.timeOverride != null) rebase(o.timeOverride);
+    else if (cfg.timeOverride == null && cfg.speed === 1) rebase(Date.now());
+    else rebase(cur);
+    if (o.lat !== undefined || o.lon !== undefined) dayCache.key = '';
+    if (cfg.paused) { clearTimeout(loopTimer); return; }   // hidden: apply settings, draw nothing
+    resize();
+    requestDraw();
+    if (wasPaused || wasSlow || frameInterval() < 1000) loop();   // resume / pick up a new frame rate right away
+  },
+  getState() {
+    const now = simNow(), st = sunState(now);
+    return { now, sunrise: st.dt.sunrise, sunset: st.dt.sunset, polar: st.dt.polar, altitude: st.pos.altitude, azimuth: st.pos.azimuth, scene: cfg.scene, decoration: cfg.decoration, wall: cfg.wall, dynamic: cfg.dynamic };
+  },
+  config: cfg,
+};
+
+// drag the timeline to scrub while previewing (in a browser; the desktop window is click-through)
+(function () {
+  const sky = $('sky');
+  let dragging = false;
+  function scrubTo(ev) {
+    const r = sky.getBoundingClientRect();
+    const f = clamp((ev.clientX - r.left) / r.width, 0, 0.99999);
+    const d = new Date(simNow()); d.setHours(0, 0, 0, 0);
+    const t = d.getTime() + f * 86400000;
+    cfg.timeOverride = t; rebase(t); draw(true);
+  }
+  sky.addEventListener('pointerdown', ev => { dragging = true; sky.setPointerCapture(ev.pointerId); scrubTo(ev); });
+  sky.addEventListener('pointermove', ev => { if (dragging) scrubTo(ev); });
+  sky.addEventListener('pointerup', () => { dragging = false; });
+})();
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    const dir = e.key === 'ArrowRight' ? 1 : -1;
+    const t = simNow() + dir * 15 * 60000;
+    cfg.timeOverride = t; rebase(t);
+    if (cfg.speed === 1) cfg.speed = 0; // freeze when scrubbing
+    draw(true);
+  } else if (e.key === '1' || e.key === '2' || e.key === '3') { cfg.scene = SCENES[+e.key - 1]; draw(true); }
+  else if (e.key === 'd') { cfg.decoration = DECOS[(DECOS.indexOf(cfg.decoration) + 1) % DECOS.length]; draw(true); }
+  else if (e.key === 'w') { cfg.wall = WALLS[(WALLS.indexOf(cfg.wall) + 1) % WALLS.length]; wallDirty = true; draw(true); }
+  else if (e.key === 'e') { cfg.dynamic = !cfg.dynamic; draw(true); loop(); }
+  else if (e.key === 'h') { cfg.showHUD = !cfg.showHUD; draw(true); }
+  else if (e.key === 'n') { cfg.timeOverride = null; cfg.speed = 1; rebase(Date.now()); draw(true); loop(); }
+});
+
+if (cfg.timeOverride != null && !qs.has('speed')) cfg.speed = 0; // a fixed ?t= freezes time unless speed given
+resize(); draw(true);
+loop();
+try { window.webkit.messageHandlers.lull.postMessage({ type: 'ready' }); } catch (e) {}
+})();
+</script>
+</body>
+</html>

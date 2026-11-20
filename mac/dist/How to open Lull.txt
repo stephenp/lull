@@ -1,0 +1,32 @@
+Lull: sunlight on your wall, as a live Mac wallpaper
+====================================================
+
+Requires macOS 13 (Ventura) or newer, on Apple Silicon or Intel.
+
+1. Drag Lull into the Applications folder (the shortcut is right here in this window).
+
+2. Open Lull from Applications. Because Lull isn't from the App Store or a registered
+   Apple developer, macOS blocks it the first time with "Apple could not verify Lull...".
+   That's expected. Click Done (not Move to Trash), then:
+
+   macOS 15 Sequoia and newer:
+     - Open System Settings > Privacy & Security.
+     - Scroll down to Security. You'll see "Lull was blocked to protect your Mac."
+     - Click Open Anyway, confirm with your password or Touch ID, then click Open.
+
+   macOS 13 Ventura / 14 Sonoma:
+     - Right-click (or Control-click) Lull in Applications, choose Open, then Open again.
+
+   You only have to do this once.
+
+   (Comfortable with Terminal? This does the same thing in one step:
+      xattr -dr com.apple.quarantine /Applications/Lull.app )
+
+3. Allow location access when asked, so the light matches the real sun where you are.
+   If you skip it, Lull estimates your location from your time zone.
+
+Lull lives in the menu bar (the two slanted bars). From there you can pick the window,
+decoration and wall, turn the gentle breeze on or off, preview a whole day, show the
+time, and turn on Launch at Login.
+
+To uninstall: choose Quit Lull from its menu, then drag Lull from Applications to the Trash.
