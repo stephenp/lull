@@ -2,10 +2,11 @@ name: Release
 
 # Push a tag like v1.1 to build the Mac DMG and the Windows zip and publish them as a GitHub release.
 # The release notes are the tag's annotation message:  git tag -a v1.1 -F notes.md && git push origin v1.1
-# Running it by hand (workflow_dispatch) on a branch builds both apps without publishing anything.
+# On pull requests (or run by hand) it only builds both apps, as a dry run; it publishes only for tags.
 on:
   push:
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
 
 permissions:
