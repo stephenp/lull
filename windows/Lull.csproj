@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Lull for Windows: a tray app that hosts ../web/index.html in WebView2 behind the desktop icons.
+    Build on Windows:   dotnet publish -c Release            (see README in this folder)
+    Build on Mac/Linux: same command; EnableWindowsTargeting lets the SDK cross-build a win-x64 exe.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 10.0.19041 = Windows 10 2004: gives us the WinRT location API (Windows.Devices.Geolocation). -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <NoWarn>$(NoWarn);WFO5001</NoWarn>
+    <RootNamespace>Lull</RootNamespace>
+    <AssemblyName>Lull</AssemblyName>
+    <ApplicationIcon>Lull.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationVisualStyles>true</ApplicationVisualStyles>
+
+    <Version>1.0.0</Version>
+    <Product>Lull</Product>
+    <Company>Stephen Pontes</Company>
+    <Copyright>© 2026 Stephen Pontes</Copyright>
+    <Description>A live wallpaper of sunlight falling across a wall.</Description>
+
+    <!-- One self-contained Lull.exe: friends don't need to install .NET. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3856.49" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Only the built, self-contained scene ships (same as the Mac app), embedded in Lull.exe and
+         unpacked to %LOCALAPPDATA%\Lull\web at launch. Run `python3 ../web/build.py` after editing web/src.html. -->
+    <EmbeddedResource Include="..\web\index.html" LogicalName="Lull.web.index.html" />
+  </ItemGroup>
+
+</Project>

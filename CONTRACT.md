@@ -1,8 +1,9 @@
 # Interface contract between web renderer and mac shell
 
-web/index.html is self-contained (inline JS/CSS, no network). It is loaded by WKWebView via loadFileURL.
+web/index.html is self-contained (inline JS/CSS, no network). It is loaded by WKWebView via loadFileURL (mac),
+and by WebView2 from https://lull.example/index.html via a virtual host mapping (windows).
 
-Global JS API the shell calls (via evaluateJavaScript):
+Global JS API the shell calls (via evaluateJavaScript on mac, ExecuteScriptAsync on windows):
   window.lull.setConfig({
     lat: Number, lon: Number,          // degrees
     scene: "blinds"|"window"|"arch",          // legacy "leaves" maps to window + foliage
@@ -19,4 +20,5 @@ Global JS API the shell calls (via evaluateJavaScript):
 
 URL query params also accepted for testing: ?lat=48.137&lon=11.575&t=2026-06-21T06:30:00&scene=blinds&hud=1&speed=600
 Defaults: Munich, live time, blinds, foliage, knockdown, dynamic on, hud=0.
-The page posts window.webkit.messageHandlers.lull.postMessage({type:"ready"}) if available.
+The page posts {type:"ready"} via window.webkit.messageHandlers.lull.postMessage (mac) and
+window.chrome.webview.postMessage (windows), whichever is available.

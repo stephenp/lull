@@ -9,13 +9,13 @@
   canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
   /* time display: bottom-left, drifts a few px over hours (burn-in protection) */
   #hud { position: fixed; left: 64px; bottom: 56px; pointer-events: none; will-change: transform;
-    font: 400 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Helvetica Neue", sans-serif;
+    font: 400 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", system-ui, "Helvetica Neue", sans-serif;
     color: rgba(255,255,255,0.86); transition: opacity 0.8s ease, color 3s ease; -webkit-font-smoothing: antialiased;
     font-variant-numeric: tabular-nums; }
   #hud.hidden { opacity: 0; }
   #hud { text-shadow: 0 0 14px rgba(0,0,0,0.22); }
   #hud.dark { color: rgba(30,23,16,0.86); text-shadow: 0 0 14px rgba(255,250,240,0.35); }
-  #hud .time { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  #hud .time { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", system-ui, sans-serif;
     font-size: clamp(44px, 4.4vw, 76px); font-weight: 200; letter-spacing: -0.025em; line-height: 1; }
   #hud .time .ap { font-size: 0.36em; font-weight: 400; letter-spacing: 0.06em; margin-left: 0.25em; opacity: 0.7; }
   #hud .date { margin-top: 10px; font-size: 15px; font-weight: 500; letter-spacing: 0.005em; opacity: 0.85; }
@@ -167,6 +167,9 @@ function sunState(ms) {
 // ---------- WebGL ----------
 const canvas = document.getElementById('c');
 const gl = canvas.getContext('webgl', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'low-power' });
+// GPU reset / driver update: the context is gone for good, so start over. The shell re-sends the
+// config (and pause state) when the reloaded page posts "ready".
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); setTimeout(() => location.reload(), 500); });
 
 const VS = 'attribute vec2 a; void main(){ gl_Position = vec4(a,0.,1.); }';
 const COMMON = `
@@ -844,6 +847,7 @@ if (cfg.timeOverride != null && !qs.has('speed')) cfg.speed = 0; // a fixed ?t= 
 resize(); draw(true);
 loop();
 try { window.webkit.messageHandlers.lull.postMessage({ type: 'ready' }); } catch (e) {}
+try { window.chrome.webview.postMessage({ type: 'ready' }); } catch (e) {}   // Windows (WebView2)
 })();
 </script>
 </body>

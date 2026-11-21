@@ -1,0 +1,42 @@
+name: Windows build
+
+on:
+  push:
+    paths: ["windows/**", "web/**", ".github/workflows/windows.yml"]
+  pull_request:
+    paths: ["windows/**", "web/**", ".github/workflows/windows.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Check web/index.html is up to date with web/src.html
+        shell: bash
+        run: |
+          python web/build.py
+          git diff --exit-code -- web/index.html || { echo "::error::Run 'python3 web/build.py' and commit web/index.html"; exit 1; }
+
+      - name: Publish Lull.exe
+        working-directory: windows
+        run: dotnet publish -c Release -o out
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item windows/out/Lull.exe dist/
+          Copy-Item "windows/dist/How to open Lull.txt" dist/
+          Compress-Archive -Path dist/* -DestinationPath Lull-windows.zip -Force
+          Get-Item windows/out/Lull.exe, Lull-windows.zip | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lull-windows
+          path: Lull-windows.zip

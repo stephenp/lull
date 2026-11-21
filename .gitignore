@@ -5,3 +5,8 @@ mac/build/
 # python
 __pycache__/
 *.pyc
+
+# windows build output
+windows/bin/
+windows/obj/
+windows/out/
