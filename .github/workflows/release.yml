@@ -1,0 +1,74 @@
+name: Release
+
+# Push a tag like v1.1 to build the Mac DMG and the Windows zip and publish them as a GitHub release.
+# The release notes are the tag's annotation message:  git tag -a v1.1 -F notes.md && git push origin v1.1
+# On pull requests (or run by hand) it only builds both apps, as a dry run; it publishes only for tags.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Lull.app and the DMG (universal, ad-hoc signed)
+        run: ./mac/build.sh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: mac/build/Lull-*.dmg
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Publish Lull.exe
+        working-directory: windows
+        run: dotnet publish -c Release -o out
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = (Select-Xml -Path windows/Lull.csproj -XPath "//Version").Node.InnerText -replace '\.0$',''
+          if ("${{ github.ref_name }}" -like "v*") { $version = "${{ github.ref_name }}".TrimStart("v") }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item windows/out/Lull.exe dist/
+          Copy-Item "windows/dist/How to open Lull.txt" dist/
+          Compress-Archive -Path dist/* -DestinationPath "Lull-$version-windows.zip" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: Lull-*-windows.zip
+          if-no-files-found: error
+
+  release:
+    needs: [mac, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          ls -la assets
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --title "Lull ${GITHUB_REF_NAME#v}" \
+            --notes-from-tag \
+            --verify-tag

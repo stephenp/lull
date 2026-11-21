@@ -1,0 +1,25 @@
+How to open Lull on Windows
+===========================
+
+Lull isn't signed by a publisher Windows knows, so Windows warns you the first time.
+
+1. Unzip Lull-windows.zip and move Lull.exe somewhere permanent, e.g. a "Lull" folder in your
+   user folder or in Documents. (Launch at Login remembers where it is.)
+2. Double-click Lull.exe. If you see "Windows protected your PC", click "More info", then "Run anyway".
+   You only need to do this once per version.
+3. If Windows asks whether Lull can use your location, allow it, so the light matches the sun where
+   you are. If it doesn't ask, check Settings > Privacy & security > Location and turn on
+   "Let desktop apps access your location".
+
+Lull lives in the system tray (bottom-right, maybe under the ^ arrow). Click its icon for options.
+
+If "Smart App Control" is on (Windows 11), it blocks unsigned apps outright and there's no
+"Run anyway". In that case Lull won't run unless Smart App Control is turned off. Depending on
+your Windows version that may be hard to undo, so think twice before doing it just for a wallpaper.
+
+Needs Windows 10 (version 2004 or later) or Windows 11, 64-bit. Uses the Microsoft Edge WebView2
+Runtime, which comes with Windows 11 and nearly all Windows 10 PCs; Lull offers a download link if
+it's missing.
+
+Troubleshooting: a log is kept at %LOCALAPPDATA%\Lull\lull.log and settings at
+%APPDATA%\Lull\settings.json.
