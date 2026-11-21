@@ -119,6 +119,6 @@ case "${1:-}" in
     echo "Share this file: $DMG ($(du -h "$DMG" | cut -f1))"
     echo "Your friends will need to approve it once (System Settings > Privacy & Security > Open Anyway);"
     echo "the steps are in \"How to open Lull.txt\" inside the disk image."
-    open -R "$DMG"
+    [ -n "${CI:-}" ] || open -R "$DMG"   # reveal in Finder, except on CI
     ;;
 esac

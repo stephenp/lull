@@ -1,7 +1,7 @@
 # Lull for Windows
 
-> **Work in progress, untested on Windows.** This port was written with Claude and has only been
-> type-checked so far: it has not been built or run on a Windows machine yet. Expect bugs, especially
+> **Lightly tested.** This port was written with Claude. It runs well on my Windows PC, but that's
+> the only machine it has been tried on so far, so expect rough edges on other setups, especially
 > in the part that puts the wallpaper behind the desktop icons.
 
 The Windows version is a thin native shell around the same scene as the Mac app (`../web/index.html`).
@@ -75,7 +75,7 @@ instead of the embedded copy, and `LULL_DEVTOOLS=1` enables the WebView2 dev too
 
 ## Not tested yet
 
-Everything. In particular:
+Beyond my own PC, in particular:
 
 - Both desktop layouts (a Windows 10 or 23H2 machine and a 24H2/25H2 machine)
 - Multiple monitors, mixed scaling, a monitor to the left of / above the primary
