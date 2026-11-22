@@ -93,6 +93,7 @@ mkdir -p "$SAVER/Contents/MacOS" "$SAVER/Contents/Resources/web"
 lipo -create "${saver_built[@]}" -output "$SAVER/Contents/MacOS/LullSaver"
 cp "$HERE/Saver/Info.plist" "$SAVER/Contents/Info.plist"
 cp "$WEB/index.html" "$SAVER/Contents/Resources/web/index.html"
+cp "$HERE/Saver/thumbnail.png" "$HERE/Saver/thumbnail@2x.png" "$SAVER/Contents/Resources/"   # System Settings picker
 [ -f "$APP/Contents/Resources/AppIcon.icns" ] && cp "$APP/Contents/Resources/AppIcon.icns" "$SAVER/Contents/Resources/"
 codesign --force -s "$SIGN_ID" "$SAVER"
 cp -R "$SAVER" "$APP/Contents/Resources/"

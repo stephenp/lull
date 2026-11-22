@@ -2,14 +2,15 @@ import ScreenSaver
 import WebKit
 
 /// Lull as a macOS screen saver: the same scene as the wallpaper, hosted in a WKWebView inside
-/// legacyScreenSaver. The look and location come from settings.json in this bundle's Resources, which
-/// Lull.app keeps in sync (see mac/Sources/ScreenSaverInstall.swift); without it, app defaults and a
-/// time-zone estimate are used.
+/// legacyScreenSaver. The location, and by default the look, come from settings.json in this bundle's
+/// Resources, which Lull.app keeps in sync (see mac/Sources/ScreenSaverInstall.swift); without it, app
+/// defaults and a time-zone estimate are used. The Options… sheet can give the screen saver its own look.
 @objc(LullSaverView)
 final class LullSaverView: ScreenSaverView, WKNavigationDelegate {
     private var webView: WKWebView?
     private var isLoaded = false
     private var observing = false
+    private var optionsSheet: OptionsSheet?
 
     private static let background = NSColor(calibratedRed: 0.03, green: 0.03, blue: 0.05, alpha: 1)
 
@@ -36,8 +37,21 @@ final class LullSaverView: ScreenSaverView, WKNavigationDelegate {
 
     override func animateOneFrame() {}
 
+    override var hasConfigureSheet: Bool { true }
+
+    override var configureSheet: NSWindow? {
+        let sheet = OptionsSheet(wallpaper: Self.wallpaperSettings()) { [weak self] in self?.push(paused: false) }
+        optionsSheet = sheet
+        return sheet.window
+    }
+
+    /// The small picture in System Settings. Decided by size, not `isPreview`, which recent macOS versions
+    /// also report for the full screen saver (that made it draw in low power, so nothing moved).
+    private var isThumbnail: Bool { bounds.width < 640 }
+
     override func startAnimation() {
         super.startAnimation()
+        NSLog("%@", "Lull saver: start, isPreview \(isPreview), size \(Int(bounds.width))x\(Int(bounds.height))")
         if !observing {
             observing = true
             // Since Sonoma, legacyScreenSaver often never calls stopAnimation and keeps the views alive after the
@@ -56,7 +70,7 @@ final class LullSaverView: ScreenSaverView, WKNavigationDelegate {
 
     @objc private func screenSaverWillStop(_ note: Notification) {
         // The System Settings thumbnail lives on after the real screen saver stops.
-        if !isPreview { tearDown() }
+        if !isThumbnail { tearDown() }
     }
 
     // MARK: Web view
@@ -111,26 +125,31 @@ final class LullSaverView: ScreenSaverView, WKNavigationDelegate {
     }
 
     /// The wallpaper's look and location as Lull.app last wrote them, over the app's defaults.
-    private func loadConfig() -> [String: Any] {
+    /// Read fresh each time: legacyScreenSaver outlives settings changes made in the app.
+    static func wallpaperSettings() -> [String: Any] {
         let loc = SaverShared.estimateLocationFromTimeZone()
         var cfg: [String: Any] = [
             "lat": loc.lat, "lon": loc.lon,
             "scene": "blinds", "decoration": "foliage", "wall": "knockdown",
             "dynamic": true, "showHUD": false,
         ]
-        // Read the file fresh each time: legacyScreenSaver outlives settings changes made in the app.
         if let url = Bundle(for: LullSaverView.self).resourceURL?.appendingPathComponent(SaverShared.settingsFileName),
            let data = try? Data(contentsOf: url),
            let saved = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
-            for key in ["lat", "lon", "scene", "decoration", "wall", "dynamic", "showHUD"] {
-                if let value = saved[key], !(value is NSNull) { cfg[key] = value }
-            }
+            for (key, value) in saved where cfg[key] != nil && !(value is NSNull) { cfg[key] = value }
         }
+        return cfg
+    }
+
+    private func loadConfig() -> [String: Any] {
+        var cfg = Self.wallpaperSettings()
+        let options = SaverOptions.load()
+        if !options.matchWallpaper { cfg.merge(options.look) { _, own in own } }
         cfg["speed"] = 1
         cfg["timeOverride"] = NSNull()
         // The System Settings thumbnail is tiny: draw it cheaply and without the time.
-        cfg["lowPower"] = isPreview
-        if isPreview { cfg["showHUD"] = false }
+        cfg["lowPower"] = isThumbnail
+        if isThumbnail { cfg["showHUD"] = false }
         return cfg
     }
 

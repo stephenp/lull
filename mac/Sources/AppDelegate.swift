@@ -15,15 +15,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var previewTimer: Timer?
     private var scrubPushPending = false
 
-    private let decorations: [(String, String)] = [
-        ("None", "none"), ("Foliage (Tree Outside)", "foliage"),
-        ("Sheer Curtain", "curtain"),
-    ]
-
-    private let walls: [(String, String)] = [
-        ("Knockdown", "knockdown"), ("Limewash", "limewash"), ("Oak Panels", "wood"),
-    ]
-
     /// 24 hours in ~60 seconds.
     private let previewSpeed: Double = 1440
 
@@ -226,7 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Scene (window type)
         let sceneItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
         let sceneMenu = NSMenu()
-        for (title, value) in [("Blinds", "blinds"), ("Window Frame", "window"), ("Arched Window", "arch")] {
+        for (title, value) in SaverShared.scenes {
             let item = makeItem(title, #selector(selectScene(_:)))
             item.representedObject = value
             item.state = settings.scene == value ? .on : .off
@@ -238,7 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Window decoration
         let decoItem = NSMenuItem(title: "Window Decoration", action: nil, keyEquivalent: "")
         let decoMenu = NSMenu()
-        for (title, value) in decorations {
+        for (title, value) in SaverShared.decorations {
             let item = makeItem(title, #selector(selectDecoration(_:)))
             item.representedObject = value
             item.state = settings.decoration == value ? .on : .off
@@ -250,7 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Wall surface
         let wallItem = NSMenuItem(title: "Wall", action: nil, keyEquivalent: "")
         let wallMenu = NSMenu()
-        for (title, value) in walls {
+        for (title, value) in SaverShared.walls {
             let item = makeItem(title, #selector(selectWall(_:)))
             item.representedObject = value
             item.state = settings.wall == value ? .on : .off
