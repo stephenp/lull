@@ -98,6 +98,7 @@ internal sealed class LullApp : ApplicationContext
         Application.ApplicationExit += (_, _) => Cleanup();
 
         LaunchAtLogin.RepairPathIfEnabled();
+        ScreenSaverInstall.OnWallpaperLaunch();
         // Start once the message loop is running, so async continuations land on the UI thread.
         var start = new Debouncer(1);
         start.Fire += () => _ = StartAsync();
@@ -108,7 +109,7 @@ internal sealed class LullApp : ApplicationContext
     {
         try
         {
-            webFolder = PrepareWebFolder();
+            webFolder = WebEnv.PrepareWebFolder();
             if (!await EnsureEnvironmentAsync()) return;
 
             coverageEvents = new CoverageEvents(() => coverageSoon.Trigger());
@@ -138,10 +139,7 @@ internal sealed class LullApp : ApplicationContext
         if (env != null) return true;
         try
         {
-            var dataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Lull", "WebView2");
-            var options = new CoreWebView2EnvironmentOptions(
-                string.IsNullOrWhiteSpace(settings.BrowserArguments) ? null : settings.BrowserArguments);
-            var e = await CoreWebView2Environment.CreateAsync(null, dataFolder, options);
+            var e = await WebEnv.CreateAsync("WebView2", settings.BrowserArguments);
             e.BrowserProcessExited += (_, _) =>
             {
                 Log.Write("WebView2 browser process exited");
@@ -161,28 +159,6 @@ internal sealed class LullApp : ApplicationContext
             ExitThread();
             return false;
         }
-    }
-
-    /// The scene ships inside Lull.exe; unpack it so WebView2 can serve it from a folder.
-    /// For development, LULL_WEB_DIR (or a web\index.html next to the exe) overrides it.
-    static string PrepareWebFolder()
-    {
-        var overrideDir = Environment.GetEnvironmentVariable("LULL_WEB_DIR");
-        if (!string.IsNullOrEmpty(overrideDir) && File.Exists(Path.Combine(overrideDir, "index.html"))) return overrideDir;
-        var beside = Path.Combine(AppContext.BaseDirectory, "web");
-        if (File.Exists(Path.Combine(beside, "index.html"))) return beside;
-
-        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Lull", "web");
-        Directory.CreateDirectory(dir);
-        using var res = Assembly.GetExecutingAssembly().GetManifestResourceStream("Lull.web.index.html")
-                        ?? throw new InvalidOperationException("embedded web/index.html is missing from the build");
-        using var ms = new MemoryStream();
-        res.CopyTo(ms);
-        var bytes = ms.ToArray();
-        var target = Path.Combine(dir, "index.html");
-        if (!File.Exists(target) || !File.ReadAllBytes(target).AsSpan().SequenceEqual(bytes))
-            File.WriteAllBytes(target, bytes);
-        return dir;
     }
 
     // MARK: Wallpaper windows
@@ -524,6 +500,22 @@ internal sealed class LullApp : ApplicationContext
         }));
 
         menu.Items.Add(new ToolStripSeparator());
+        if (ScreenSaverInstall.IsActive)
+            menu.Items.Add(Item("Screen Saver Settings…", ScreenSaverInstall.OpenSettings));
+        else
+        {
+            var saver = Item("Use as Screen Saver…", () =>
+            {
+                try { ScreenSaverInstall.Install(); }
+                catch (Exception e)
+                {
+                    Log.Write($"screen saver: install failed: {e}");
+                    MessageBox.Show($"Couldn't set up the screen saver: {e.Message}", "Lull");
+                }
+            });
+            saver.ToolTipText = "Makes Lull your screen saver, with the same look as your wallpaper.";
+            menu.Items.Add(saver);
+        }
         menu.Items.Add(Item("Reload Wallpaper", () => { gaveUp = false; failures = 0; recentResets.Clear(); _ = RebuildAsync(); }));
         menu.Items.Add(Item("Quit Lull", () => ExitThread()));
         menu.ResumeLayout();

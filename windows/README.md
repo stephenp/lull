@@ -21,6 +21,27 @@ built into Windows), one window per monitor, behind the desktop icons.
 | CoreLocation | `LocationProvider` (Windows location service), same time-zone fallback |
 | `SMAppService` login item | `LaunchAtLogin` (`HKCU\...\Run`) |
 | `UserDefaults` | `%APPDATA%\Lull\settings.json` |
+| `Lull.saver` (separate plug-in bundle, `mac/Saver`) | The same `Lull.exe`, copied to `Lull.scr` (`ScreenSaverApp`, `ScreenSaverInstall`) |
+
+## Screen saver
+
+A Windows screen saver is an ordinary exe renamed `.scr`. Windows starts it with `/s` (run full screen),
+`/p <hwnd>` (draw into the preview box in Screen Saver Settings) or `/c` (the Settings button). So there's no
+second binary: `Program.Main` checks for those arguments before starting the tray app.
+
+- **Use as Screen Saver…** in the tray menu copies `Lull.exe` to `%LOCALAPPDATA%\Lull\Lull.scr`, points
+  `HKCU\Control Panel\Desktop\SCRNSAVE.EXE` at it, and opens Screen Saver Settings. No admin rights needed.
+  On every launch the tray app refreshes `Lull.scr` if it came from a different build.
+- `/s` opens a topmost window per monitor, using the same `SceneView` (WebView2 host) as the wallpaper.
+  WebView2 swallows mouse and keyboard input, so the screen saver ends by watching the system instead:
+  the cursor moving more than 10 px, or any other input (`GetLastInputInfo`).
+- It reads `settings.json` but never writes it, and never asks for location (it uses the last location the
+  app saved, or the time-zone estimate). It has its own WebView2 data folder (`WebView2-saver`), so it can
+  run next to the wallpaper even with different `BrowserArguments`. The running wallpaper pauses under it,
+  because `Coverage` sees a fullscreen window.
+- `/c` explains that the screen saver follows the tray menu, and offers to start Lull if it isn't running.
+
+To try it without installing: `Lull.exe /s`.
 
 ## Behind the desktop icons
 
@@ -83,3 +104,6 @@ Beyond my own PC, in particular:
 - Pausing under maximized windows and fullscreen games, and resuming after Win+D
 - Location permission prompt on 24H2+, and the time-zone fallback
 - GPU vendors (WebView2 inside a layered child window is what 24H2 requires; Intel / AMD / NVIDIA may differ)
+- The screen saver: `/s` on multiple monitors with mixed scaling, the preview box in Screen Saver Settings
+  (WebView2 inside another process's window), "On resume, display logon screen", and the wallpaper pausing
+  underneath

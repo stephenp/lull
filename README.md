@@ -2,7 +2,7 @@
 
 <h1 align="center">Lull</h1>
 
-<p align="center">A live wallpaper of sunlight falling across a wall, for Mac and Windows.<br>The light follows the real sun where you are, from first light to moonlight.</p>
+<p align="center">A live wallpaper and screen saver of sunlight falling across a wall, for Mac and Windows.<br>The light follows the real sun where you are, from first light to moonlight.</p>
 
 <p align="center"><a href="https://github.com/stephenp/lull/releases/latest"><b>Download for Mac</b></a> · macOS 13 or later · Apple Silicon and Intel<br>
 <a href="https://github.com/stephenp/lull/releases/latest"><b>Download for Windows</b></a> · Windows 10 (2004) or later, 64-bit</p>
@@ -38,6 +38,7 @@ Everything lives in a small icon in the Mac menu bar or the Windows system tray:
 - **Show Time:** the time, the date, time until sunset or sunrise, and today's sun curve
 - **Preview Day:** scrub through a whole day of light
 - **Launch at Login** and **Low Power Mode**
+- **Screen saver:** the same scene as your screen saver, with the same look (see below)
 
 The light's angle, color and warmth follow the real sun at your location, through golden hour into a cool moonlit night. Lull pauses itself while your desktop is covered or your screen is off, so it stays light on your computer.
 
@@ -61,6 +62,15 @@ Lull lives in the menu bar (the two slanted bars).
 
 Lull lives in the system tray (bottom right, possibly under the **^** arrow). It uses the Microsoft Edge WebView2 Runtime, which comes with Windows 11 and almost every Windows 10 PC; Lull offers a download link if it's missing. If Smart App Control is turned on, Windows blocks unsigned apps entirely, so Lull won't run.
 
+### Screen saver
+
+Lull can also be your screen saver, showing the same scene as the wallpaper with the same window, wall and time display. You don't need to download anything else. The screen saver follows whatever you choose in Lull's menu.
+
+- **Mac:** choose **Install Screen Saver…** from Lull's menu bar icon, then pick **Lull** in **System Settings → Screen Saver**. Lull keeps the screen saver up to date when you update the app.
+- **Windows:** choose **Use as Screen Saver…** from Lull's tray icon. Lull sets itself as your screen saver and opens **Screen Saver Settings**, where you can choose how long to wait. Lull keeps the screen saver up to date when you update the app.
+
+The screen saver works even when the wallpaper isn't running. It uses the last location the app found.
+
 ## Build it yourself
 
 **Mac**, with the Xcode Command Line Tools (`xcode-select --install`):
@@ -79,7 +89,7 @@ dotnet publish -c Release -o out
 .\out\Lull.exe
 ```
 
-Both apps are thin native shells around the same scene, [`web/src.html`](web/src.html) (run `python3 web/build.py` after editing it). See [`windows/README.md`](windows/README.md) for how the Windows version works.
+Both apps, and their screen savers, are thin native shells around the same scene, [`web/src.html`](web/src.html) (run `python3 web/build.py` after editing it). See [`windows/README.md`](windows/README.md) for how the Windows version works.
 
 ## About
 

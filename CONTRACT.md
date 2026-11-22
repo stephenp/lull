@@ -2,6 +2,8 @@
 
 web/index.html is self-contained (inline JS/CSS, no network). It is loaded by WKWebView via loadFileURL (mac),
 and by WebView2 from https://lull.example/index.html via a virtual host mapping (windows).
+The screen savers load the same file the same way: from Lull.saver/Contents/Resources/web inside legacyScreenSaver (mac),
+and from Lull.scr (the same exe) with its own WebView2 data folder, %LOCALAPPDATA%\Lull\WebView2-saver (windows).
 
 Global JS API the shell calls (via evaluateJavaScript on mac, ExecuteScriptAsync on windows):
   window.lull.setConfig({
