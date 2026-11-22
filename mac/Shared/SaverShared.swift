@@ -8,13 +8,6 @@ enum SaverShared {
     /// legacyScreenSaver is sandboxed and can't read Lull's own preferences. The saver reads it from its bundle.
     static let settingsFileName = "settings.json"
 
-    /// Menu titles and scene values, shared by the app's menu and the screen saver's Options sheet.
-    static let scenes: [(String, String)] = [("Blinds", "blinds"), ("Window Frame", "window"), ("Arched Window", "arch")]
-    static let decorations: [(String, String)] = [
-        ("None", "none"), ("Foliage (Tree Outside)", "foliage"), ("Sheer Curtain", "curtain"),
-    ]
-    static let walls: [(String, String)] = [("Knockdown", "knockdown"), ("Limewash", "limewash"), ("Oak Panels", "wood")]
-
     /// Rough location from the system time zone: longitude from the standard UTC offset,
     /// latitude from the hemisphere of common zones. Used until (or unless) CoreLocation answers.
     static func estimateLocationFromTimeZone() -> (lat: Double, lon: Double) {

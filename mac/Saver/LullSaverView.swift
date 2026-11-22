@@ -2,15 +2,14 @@ import ScreenSaver
 import WebKit
 
 /// Lull as a macOS screen saver: the same scene as the wallpaper, hosted in a WKWebView inside
-/// legacyScreenSaver. The location, and by default the look, come from settings.json in this bundle's
-/// Resources, which Lull.app keeps in sync (see mac/Sources/ScreenSaverInstall.swift); without it, app
-/// defaults and a time-zone estimate are used. The Options… sheet can give the screen saver its own look.
+/// legacyScreenSaver. It always mirrors the wallpaper: the look and location come from settings.json in
+/// this bundle's Resources, which Lull.app keeps in sync (see mac/Sources/ScreenSaverInstall.swift);
+/// without it, app defaults and a time-zone estimate are used.
 @objc(LullSaverView)
 final class LullSaverView: ScreenSaverView, WKNavigationDelegate {
     private var webView: WKWebView?
     private var isLoaded = false
     private var observing = false
-    private var optionsSheet: OptionsSheet?
 
     private static let background = NSColor(calibratedRed: 0.03, green: 0.03, blue: 0.05, alpha: 1)
 
@@ -36,14 +35,6 @@ final class LullSaverView: ScreenSaverView, WKNavigationDelegate {
     }
 
     override func animateOneFrame() {}
-
-    override var hasConfigureSheet: Bool { true }
-
-    override var configureSheet: NSWindow? {
-        let sheet = OptionsSheet(wallpaper: Self.wallpaperSettings()) { [weak self] in self?.push(paused: false) }
-        optionsSheet = sheet
-        return sheet.window
-    }
 
     /// The small picture in System Settings. Decided by size, not `isPreview`, which recent macOS versions
     /// also report for the full screen saver (that made it draw in low power, so nothing moved).
@@ -132,7 +123,7 @@ final class LullSaverView: ScreenSaverView, WKNavigationDelegate {
 
     /// The wallpaper's look and location as Lull.app last wrote them, over the app's defaults.
     /// Read fresh each time: legacyScreenSaver outlives settings changes made in the app.
-    static func wallpaperSettings() -> [String: Any] {
+    private static func wallpaperSettings() -> [String: Any] {
         let loc = SaverShared.estimateLocationFromTimeZone()
         var cfg: [String: Any] = [
             "lat": loc.lat, "lon": loc.lon,
@@ -149,8 +140,6 @@ final class LullSaverView: ScreenSaverView, WKNavigationDelegate {
 
     private func loadConfig() -> [String: Any] {
         var cfg = Self.wallpaperSettings()
-        let options = SaverOptions.load()
-        if !options.matchWallpaper { cfg.merge(options.look) { _, own in own } }
         cfg["speed"] = 1
         cfg["timeOverride"] = NSNull()
         // The System Settings thumbnail is tiny: draw it cheaply and without the time.
