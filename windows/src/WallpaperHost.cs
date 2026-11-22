@@ -1,6 +1,5 @@
 using System;
 using System.Drawing;
-using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
@@ -8,19 +7,12 @@ using static Lull.Native;
 
 namespace Lull;
 
-/// One wallpaper window per monitor: a plain Win32 window parented behind the desktop icons, hosting a
-/// WebView2 controller that runs web/index.html. Mirrors mac/Sources/WallpaperWindow.swift.
-///
-/// We host CoreWebView2Controller directly (not the WinForms WebView2 control) so we own its bounds,
-/// DPI scale and visibility: once our window is a child of Explorer's desktop it no longer gets
-/// WM_DPICHANGED, so the scale has to be set by hand.
+/// One wallpaper window per monitor: a plain Win32 window parented behind the desktop icons, hosting the
+/// scene in a SceneView. Mirrors mac/Sources/WallpaperWindow.swift.
 internal sealed class WallpaperHost : NativeWindow, IDisposable
 {
-    public const string HostName = "lull.example";        // virtual host mapped to the unpacked web folder
-    static readonly Color SceneBase = Color.FromArgb(0x07, 0x08, 0x0c);   // body background in web/src.html
-
     public Display Display { get; private set; }
-    public bool IsLoaded { get; private set; }
+    public bool IsLoaded => scene?.IsLoaded == true;
     public DateTime CreatedAt { get; } = DateTime.Now;
     /// Called when the scene says it's ready (and again after every reload).
     public Action<WallpaperHost>? Loaded;
@@ -29,7 +21,7 @@ internal sealed class WallpaperHost : NativeWindow, IDisposable
     public Action<WallpaperHost, bool>? Failed;
 
     Desktop.Handles desktop;
-    CoreWebView2Controller? controller;
+    SceneView? scene;
     bool covered, asleep;
     bool? sentPaused;
     bool disposed;
@@ -60,103 +52,16 @@ internal sealed class WallpaperHost : NativeWindow, IDisposable
             host.Dispose();
             return null;
         }
-        _ = host.InitWebViewAsync(env, webFolder);
+        host.scene = SceneView.Start(host.Handle, $"host {display.Device}", display.Scale, env, webFolder,
+            loaded: () =>
+            {
+                host.sentPaused = null;
+                host.Loaded?.Invoke(host);
+                host.UpdatePaused();
+            },
+            failed: dead => { if (!host.disposed) host.Failed?.Invoke(host, dead); },
+            initialized: async () => { if (host.asleep) await host.ApplySleepAsync(true); });   // created while the displays were off / locked
         return host;
-    }
-
-    async Task InitWebViewAsync(CoreWebView2Environment env, string webFolder)
-    {
-        try
-        {
-            var c = await env.CreateCoreWebView2ControllerAsync(Handle);
-            if (disposed) { c.Close(); return; }
-            controller = c;
-            c.DefaultBackgroundColor = SceneBase;              // no white flash at login
-            c.ShouldDetectMonitorScaleChanges = false;
-            c.RasterizationScale = Display.Scale;
-            UpdateBounds();
-
-            var wv = c.CoreWebView2;
-            var s = wv.Settings;
-            s.AreDefaultContextMenusEnabled = false;
-            s.AreBrowserAcceleratorKeysEnabled = false;
-            s.IsZoomControlEnabled = false;
-            s.IsPinchZoomEnabled = false;
-            s.IsStatusBarEnabled = false;
-            s.IsSwipeNavigationEnabled = false;
-            s.AreDefaultScriptDialogsEnabled = false;
-            s.IsGeneralAutofillEnabled = false;
-            s.IsPasswordAutosaveEnabled = false;
-            s.AreDevToolsEnabled = Environment.GetEnvironmentVariable("LULL_DEVTOOLS") == "1";
-
-            wv.SetVirtualHostNameToFolderMapping(HostName, webFolder, CoreWebView2HostResourceAccessKind.DenyCors);
-            wv.WebMessageReceived += OnWebMessage;
-            wv.NavigationCompleted += (_, e) =>
-            {
-                if (!e.IsSuccess) Log.Write($"host {Display.Device}: navigation failed ({e.WebErrorStatus})");
-            };
-            wv.ProcessFailed += (_, e) =>
-            {
-                Log.Write($"host {Display.Device}: WebView2 process failed ({e.ProcessFailedKind}, {e.Reason})");
-                switch (e.ProcessFailedKind)
-                {
-                    case CoreWebView2ProcessFailedKind.BrowserProcessExited:
-                        Failed?.Invoke(this, true);
-                        break;
-                    case CoreWebView2ProcessFailedKind.RenderProcessExited:
-                    case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
-                        Reload();                      // just this monitor; posts "ready" again
-                        break;
-                    default:
-                        break;                         // GPU / utility processes restart on their own
-                }
-            };
-            // Keep the scene on-site: it has no links, but never navigate anywhere else.
-            wv.NavigationStarting += (_, e) =>
-            {
-                if (!e.Uri.StartsWith($"https://{HostName}/", StringComparison.OrdinalIgnoreCase)) e.Cancel = true;
-            };
-            wv.NewWindowRequested += (_, e) => e.Handled = true;
-
-            // Version in the URL so a new build never shows a cached copy of the old scene.
-            wv.Navigate($"https://{HostName}/index.html?v={Uri.EscapeDataString(Application.ProductVersion)}");
-            if (asleep) await ApplySleepAsync(true);   // created while the displays were off / locked
-        }
-        catch (Exception e)
-        {
-            Log.Write($"host {Display.Device}: WebView2 init failed: {e.Message}");
-            if (!disposed) Failed?.Invoke(this, true);
-        }
-    }
-
-    void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(e.WebMessageAsJson);
-            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
-                doc.RootElement.TryGetProperty("type", out var t) && t.GetString() == "ready")
-            {
-                // "ready" guarantees window.lull exists (NavigationCompleted can fire before the script runs).
-                IsLoaded = true;
-                sentPaused = null;
-                Loaded?.Invoke(this);
-                UpdatePaused();
-            }
-        }
-        catch (JsonException) { }
-    }
-
-    public void Push(string configJson)
-    {
-        if (!IsLoaded || controller == null) return;
-        _ = Run($"window.lull && window.lull.setConfig({configJson});");
-    }
-
-    async Task Run(string js)
-    {
-        try { if (controller != null) await controller.CoreWebView2.ExecuteScriptAsync(js); }
-        catch (Exception e) { Log.Write($"host {Display.Device}: script failed: {e.Message}"); }
     }
 
     /// Desktop on this monitor is fully covered by other windows.
@@ -181,7 +86,7 @@ internal sealed class WallpaperHost : NativeWindow, IDisposable
         bool paused = asleep || covered;
         if (paused == sentPaused) return;
         sentPaused = paused;
-        _ = Run($"window.lull && window.lull.setConfig({{paused: {(paused ? "true" : "false")}}});");
+        scene?.SetPaused(paused);
     }
 
     async Task WakeAsync()
@@ -193,7 +98,7 @@ internal sealed class WallpaperHost : NativeWindow, IDisposable
     /// For long pauses, also hide and suspend the WebView so it gives back CPU and memory.
     async Task ApplySleepAsync(bool sleep)
     {
-        var c = controller;
+        var c = scene?.Controller;
         if (c == null) return;
         try
         {
@@ -217,23 +122,12 @@ internal sealed class WallpaperHost : NativeWindow, IDisposable
     {
         Display = display;
         Desktop.Position(Handle, desktop, display);
-        if (controller != null) controller.RasterizationScale = display.Scale;
-        UpdateBounds();
+        if (scene != null) { scene.Scale = display.Scale; scene.UpdateBounds(); }
     }
 
-    void UpdateBounds()
-    {
-        if (controller == null || !GetClientRect(Handle, out RECT r)) return;
-        controller.Bounds = new Rectangle(0, 0, r.Width, r.Height);
-        controller.NotifyParentWindowPositionChanged();
-    }
+    public void Push(string configJson) => scene?.Push(configJson);
 
-    public void Reload()
-    {
-        IsLoaded = false;
-        try { controller?.CoreWebView2.Reload(); }
-        catch (Exception e) { Log.Write($"host {Display.Device}: reload failed: {e.Message}"); Failed?.Invoke(this, false); }
-    }
+    public void Reload() => scene?.Reload();
 
     /// Explorer replaced its wallpaper WorkerW (raised layout): we survive as a child of Progman,
     /// but need to go back between the icons and the new WorkerW.
@@ -261,7 +155,7 @@ internal sealed class WallpaperHost : NativeWindow, IDisposable
         switch (m.Msg)
         {
             case WM_ERASEBKGND:
-                using (var g = Graphics.FromHdc(m.WParam)) g.Clear(SceneBase);
+                using (var g = Graphics.FromHdc(m.WParam)) g.Clear(SceneView.SceneBase);
                 m.Result = new IntPtr(1);
                 return;
             case WM_MOUSEACTIVATE:
@@ -269,7 +163,7 @@ internal sealed class WallpaperHost : NativeWindow, IDisposable
                 return;
             case WM_SIZE:
                 base.WndProc(ref m);
-                UpdateBounds();
+                scene?.UpdateBounds();
                 return;
         }
         base.WndProc(ref m);
@@ -279,8 +173,8 @@ internal sealed class WallpaperHost : NativeWindow, IDisposable
     {
         if (disposed) return;
         disposed = true;
-        try { controller?.Close(); } catch { }
-        controller = null;
+        scene?.Dispose();
+        scene = null;
         if (Handle != IntPtr.Zero)
         {
             Desktop.Detach(Handle);

@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         rebuildWindows()
+        ScreenSaverInstall.updateIfStale(settings: saverSettings())
 
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(screensChanged(_:)),
@@ -149,12 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// CoreLocation fix if we have one, otherwise a rough estimate from the system time zone
     /// (longitude from the UTC offset, latitude from the hemisphere of common zones).
     private func effectiveLocation() -> (lat: Double, lon: Double) {
-        if let loc = settings.lastLocation { return loc }
-        let tz = TimeZone.current
-        let offsetHours = Double(tz.secondsFromGMT() - Int(tz.daylightSavingTimeOffset())) / 3600.0
-        let southern = ["Australia/", "Pacific/Auckland", "America/Sao_Paulo", "America/Argentina", "America/Santiago",
-                        "Africa/Johannesburg"].contains { tz.identifier.hasPrefix($0) }
-        return (lat: southern ? -33.0 : 40.0, lon: offsetHours * 15.0)
+        settings.lastLocation ?? SaverShared.estimateLocationFromTimeZone()
     }
 
     private func refreshLocation() {
@@ -181,6 +177,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let json = configJSON()
         windows.forEach { $0.push(configJSON: json) }
+        ScreenSaverInstall.sync(settings: saverSettings())
+    }
+
+    /// The look and location the screen saver mirrors (never the Preview Day clock).
+    private func saverSettings() -> [String: Any] {
+        let loc = effectiveLocation()
+        return [
+            "lat": loc.lat, "lon": loc.lon,
+            "scene": settings.scene, "decoration": settings.decoration, "wall": settings.wall,
+            "dynamic": settings.dynamic, "showHUD": settings.showHUD,
+        ]
     }
 
     // MARK: Status item & menu
@@ -276,6 +283,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(login)
 
         menu.addItem(.separator())
+        if ScreenSaverInstall.isInstalled {
+            menu.addItem(makeItem("Screen Saver Settings…", #selector(openScreenSaverSettings(_:))))
+        } else {
+            let saver = makeItem("Install Screen Saver…", #selector(installScreenSaver(_:)))
+            saver.toolTip = "Adds Lull to System Settings → Screen Saver, with the same look as your wallpaper."
+            menu.addItem(saver)
+        }
         menu.addItem(makeItem("Reload Wallpaper", #selector(reloadWallpaper(_:))))
         let quit = NSMenuItem(title: "Quit Lull", action: #selector(quit(_:)), keyEquivalent: "q")
         quit.target = self
@@ -423,6 +437,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showAlert(title: "Launch at Login",
                       message: "Couldn't change the login item: \(error.localizedDescription)\n\nTip: move Lull.app to /Applications first, or add it manually in System Settings → General → Login Items.")
         }
+    }
+
+    @objc private func installScreenSaver(_ sender: NSMenuItem) {
+        if let error = ScreenSaverInstall.install(settings: saverSettings()) {
+            showAlert(title: "Install Screen Saver", message: "Couldn't install the screen saver: \(error.localizedDescription)")
+            return
+        }
+        ScreenSaverInstall.openSystemSettings()
+    }
+
+    @objc private func openScreenSaverSettings(_ sender: NSMenuItem) {
+        ScreenSaverInstall.openSystemSettings()
     }
 
     @objc private func reloadWallpaper(_ sender: NSMenuItem) {

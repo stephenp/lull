@@ -12,6 +12,8 @@ internal static class Native
     public const int WM_SIZE = 0x0005;
     public const int WM_ERASEBKGND = 0x0014;
     public const int WM_SETTINGCHANGE = 0x001A;
+    public const int WM_ACTIVATEAPP = 0x001C;
+    public const int WM_SETCURSOR = 0x0020;
     public const int WM_MOUSEACTIVATE = 0x0021;
     public const int WM_DISPLAYCHANGE = 0x007E;
     public const int WM_NCHITTEST = 0x0084;
@@ -36,8 +38,10 @@ internal static class Native
     public const long WS_VISIBLE = 0x10000000L;
     public const long WS_CLIPCHILDREN = 0x02000000L;
     public const long WS_CLIPSIBLINGS = 0x04000000L;
+    public const long WS_DISABLED = 0x08000000L;
     public const long WS_CAPTION = 0x00C00000L;
     public const long WS_THICKFRAME = 0x00040000L;
+    public const long WS_EX_TOPMOST = 0x00000008L;
     public const long WS_EX_TOOLWINDOW = 0x00000080L;
     public const long WS_EX_TRANSPARENT = 0x00000020L;
     public const long WS_EX_APPWINDOW = 0x00040000L;
@@ -50,10 +54,12 @@ internal static class Native
     public const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOZORDER = 0x0004,
                       SWP_NOACTIVATE = 0x0010, SWP_FRAMECHANGED = 0x0020, SWP_SHOWWINDOW = 0x0040;
     public static readonly IntPtr HWND_BOTTOM = new(1);
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
     public const int SW_HIDE = 0, SW_SHOWNOACTIVATE = 4;
 
     public const uint SMTO_NORMAL = 0x0000;
     public const uint SPI_SETDESKWALLPAPER = 0x0014, SPI_GETDESKWALLPAPER = 0x0073, SPIF_UPDATEINIFILE = 0x01;
+    public const uint SPI_SETSCREENSAVETIMEOUT = 0x000F, SPI_SETSCREENSAVEACTIVE = 0x0011, SPIF_SENDCHANGE = 0x02;
     public const int MAX_PATH = 260;
 
     // ---- WinEvents ----
@@ -98,6 +104,9 @@ internal static class Native
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string szDevice;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+
     public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
     public delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdc, ref RECT rect, IntPtr data);
     public delegate void WinEventProc(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
@@ -119,6 +128,14 @@ internal static class Native
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT pt);
+    [DllImport("user32.dll")] public static extern IntPtr SetCursor(IntPtr cursor);
+    [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern uint GetShortPathName(string longPath, StringBuilder shortPath, uint size);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern uint GetLongPathName(string shortPath, StringBuilder longPath, uint size);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int cmd);
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);

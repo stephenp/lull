@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds build/Lull.app using only the Xcode Command Line Tools (no Xcode project).
+# Builds build/Lull.app (with the Lull.saver screen saver inside it) using only the Xcode Command Line Tools.
 #   ./build.sh            build universal (arm64 + x86_64) app, falling back to native arch
 #   ./build.sh run        build, then launch
 #   ./build.sh install    build, then copy to /Applications
@@ -28,18 +28,25 @@ if [ ! -f "$WEB/index.html" ]; then
 fi
 
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
-SOURCES=("$HERE"/Sources/*.swift)
+SOURCES=("$HERE"/Sources/*.swift "$HERE"/Shared/*.swift)
 FLAGS=(-O -sdk "$SDK" -swift-version 5
        -framework AppKit -framework WebKit -framework CoreLocation -framework ServiceManagement)
+SAVER_SOURCES=("$HERE"/Saver/*.swift "$HERE"/Shared/*.swift)
+SAVER_FLAGS=(-O -sdk "$SDK" -swift-version 5 -parse-as-library -emit-library -module-name LullSaver
+             -framework AppKit -framework WebKit -framework ScreenSaver)
+SAVER="$OUT/Lull.saver"
 
 rm -rf "$OUT"
 mkdir -p "$OUT/obj"
 
 built=()
+saver_built=()
 for arch in arm64 x86_64; do
   echo "==> Compiling for $arch"
-  if swiftc "${FLAGS[@]}" -target "$arch-apple-macos$MIN_OS" "${SOURCES[@]}" -o "$OUT/obj/Lull-$arch"; then
+  if swiftc "${FLAGS[@]}" -target "$arch-apple-macos$MIN_OS" "${SOURCES[@]}" -o "$OUT/obj/Lull-$arch" &&
+     swiftc "${SAVER_FLAGS[@]}" -target "$arch-apple-macos$MIN_OS" "${SAVER_SOURCES[@]}" -o "$OUT/obj/LullSaver-$arch"; then
     built+=("$OUT/obj/Lull-$arch")
+    saver_built+=("$OUT/obj/LullSaver-$arch")
   else
     echo "warning: $arch build failed; continuing without it" >&2
   fi
@@ -78,9 +85,23 @@ else
 fi
 
 SIGN_ID="${LULL_SIGN_IDENTITY:--}"
+
+# The screen saver: a plug-in bundle for legacyScreenSaver, shipped inside the app, which installs it
+# into ~/Library/Screen Savers from its menu (mac/Sources/ScreenSaverInstall.swift).
+echo "==> Assembling $SAVER"
+mkdir -p "$SAVER/Contents/MacOS" "$SAVER/Contents/Resources/web"
+lipo -create "${saver_built[@]}" -output "$SAVER/Contents/MacOS/LullSaver"
+cp "$HERE/Saver/Info.plist" "$SAVER/Contents/Info.plist"
+cp "$WEB/index.html" "$SAVER/Contents/Resources/web/index.html"
+cp "$HERE/Saver/thumbnail.png" "$HERE/Saver/thumbnail@2x.png" "$SAVER/Contents/Resources/"   # System Settings picker
+[ -f "$APP/Contents/Resources/AppIcon.icns" ] && cp "$APP/Contents/Resources/AppIcon.icns" "$SAVER/Contents/Resources/"
+codesign --force -s "$SIGN_ID" "$SAVER"
+cp -R "$SAVER" "$APP/Contents/Resources/"
+
 if [ "$SIGN_ID" = "-" ]; then echo "==> Ad-hoc signing"; else echo "==> Signing with \"$SIGN_ID\""; fi
 codesign --force --deep -s "$SIGN_ID" "$APP"
 codesign --verify --strict "$APP"
+codesign --verify --strict "$APP/Contents/Resources/Lull.saver"
 
 echo
 echo "Built: $APP ($(lipo -archs "$APP/Contents/MacOS/Lull"))"
