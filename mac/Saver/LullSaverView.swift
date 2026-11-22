@@ -92,6 +92,12 @@ final class LullSaverView: ScreenSaverView, WKNavigationDelegate {
         wv.autoresizingMask = [.width, .height]
         wv.navigationDelegate = self
         wv.setValue(false, forKey: "drawsBackground")  // show our dark background until the scene draws
+        // legacyScreenSaver's window looks occluded to WebKit (it's shown remotely), so the page reports
+        // itself hidden and requestAnimationFrame never fires: one still frame, no clock, no breeze.
+        // Turn WebKit's occlusion detection off for this view so the page stays visible.
+        if wv.responds(to: Selector(("_setWindowOcclusionDetectionEnabled:"))) {
+            wv.setValue(false, forKey: "windowOcclusionDetectionEnabled")
+        }
         addSubview(wv)
         webView = wv
         isLoaded = false
